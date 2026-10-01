@@ -29,6 +29,13 @@ const F={terrain:[['secteur','Secteur visité','t'],['foyers','Foyers visités',
 cellule_hebdo:[['cellule','Cellule / lieu','t'],['programme','Programme du jour','s:Formation envoyée|Rappel des Vérités'],['presents','Effectif présent','n'],['nouveaux','Nouveaux venus','n'],['conversions','Conversions','n'],['multi','Cellule multipliée cette semaine ?','s:Non|Oui'],['offrande','Offrande (scellée) : montant','t'],['obs','Observations','a']],
 zone:[['secteurs','Secteurs actifs','n'],['binomes','Binômes actifs','n'],['foyers','Foyers visités','n'],['nouveaux_t','Nouveaux contacts (terrain)','n'],['etudes','Études en cours','n'],['cellules','Cellules actives','n'],['presents','Effectif total des cellules','n'],['nouveaux_c','Nouveaux venus (cellules)','n'],['conversions','Conversions','n'],['multi','Cellules multipliées','n'],['offrandes','Offrandes (total)','t'],['obs','Observations','a']]};
 let me,zones=[],tab='inf',pv='',sub='mine',asub='mem',W,coll,P={},M=[],T=[],cur=null,posts=[],shares=[],sp=new Set(),ss=new Set();
+const VAPID='BGw9Ud_5_5ealL0guvz_MUgV1bBKtQO7_WUOlBv_4yPRxUEsJGJ4PW_-B5IXm0y9UEXmZjEN4W2tnhLMlF_EXdY';
+const has=r=>me.role_type==r||me.extra_role==r;
+const KT={binome:['terrain','de terrain'],berger_poste:['cellule','de cellule']};
+let dip;addEventListener('beforeinstallprompt',e=>{e.preventDefault();dip=e});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+const standalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+const inst=()=>`<div class=card><b>📲 Installer l'application</b><p class=m>Pour l'ouvrir comme une vraie application, sans navigateur.</p>${standalone()?'':'<button data-a=inst>Installer maintenant</button> '}<button class=s data-a=inv>📨 Inviter quelqu'un à l'installer</button></div>`;
 const can=p=>me.role_type=='admin'&&(me.is_super||me.perms?.[p]);
 const canPub=()=>me.role_type=='zone_lead'||can('messages');
 const myType=()=>({binome:'terrain',serviteur:'cellule_hebdo',berger_poste:'cellule_hebdo',zone_lead:'zone'})[me.role_type];
@@ -51,22 +58,32 @@ async function boot(){const{data:{session}}=await sb.auth.getSession();if(!sessi
  $('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';
  if(me.status!='active')return stateView();
  await loadZ();if(!me.identity_done)return idView(true);enter()}
-async function enter(){await loadInfo();const un=posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id);if(un.length)return gate(un);nav();show()}
+async function enter(){syncPush();await loadInfo();const un=posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id);if(un.length)return gate(un);nav();show()}
 async function authView(msg,mode='in'){await loadZ();$('#nav').innerHTML='';$('#who').innerHTML='';
  app.innerHTML=`<div class=card><div class=tabs><button class="${mode=='in'?'on':''}" data-a=am data-v=in>Connexion</button><button class="${mode=='up'?'on':''}" data-a=am data-v=up>Inscription</button></div><p class=m>${esc(msg||'')}</p><form id=af>
  ${mode=='up'?`<input name=full_name placeholder="Nom complet" required><input name=phone placeholder="Téléphone / WhatsApp"><select name=role_type required><option value="">Votre fonction…</option>${['binome','serviteur','berger_poste','zone_lead'].map(r=>`<option value=${r}>${ROLES[r]}</option>`).join('')}</select><select name=zone_id><option value="">Votre zone…</option>${zones.map(z=>`<option value=${z.id}>${esc(z.name)}</option>`).join('')}</select><input name=unit placeholder="Secteur ou cellule">`:''}
- <input name=email type=email placeholder="Adresse e-mail" required><input name=password type=password placeholder="Mot de passe (8 caractères min.)" minlength=8 required><button>${mode=='up'?"S'inscrire":'Se connecter'}</button></form></div>`;
+ <input name=email type=email placeholder="Adresse e-mail" required><input name=password type=password placeholder="Mot de passe (8 caractères min.)" minlength=8 required><button>${mode=='up'?"S'inscrire":'Se connecter'}</button></form></div>${inst()}`;
  $('#af').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));let r;
   if(mode=='up'){r=await sb.auth.signUp({email:f.email,password:f.password,options:{data:{pm_signup:true,full_name:f.full_name,phone:f.phone,role_type:f.role_type,zone_id:f.zone_id,unit:f.unit}}});if(!r.error&&!r.data.session)return authView('Compte créé : connectez-vous.')}
   else r=await sb.auth.signInWithPassword({email:f.email,password:f.password});
   r.error?authView(r.error.message,mode):boot()}}
 function stateView(){$('#nav').innerHTML='';const bl=me.status=='blocked';
- app.innerHTML=`<div class=card><h3>${bl?'Compte bloqué':'En attente de validation'}</h3><p>${bl?"Votre accès a été suspendu par l'administration.":"Votre inscription est bien reçue. L'administration doit la valider avant d'activer votre espace."}</p><button data-a=ref>Actualiser</button> <button class=s data-a=out>Déconnexion</button></div>`}
+ app.innerHTML=`<div class=card><h3>${bl?'Compte bloqué':'En attente de validation'}</h3><p>${bl?"Votre accès a été suspendu par l'administration.":"Votre inscription est bien reçue. L'administration doit la valider avant d'activer votre espace."}</p><button data-a=ref>Actualiser</button> <button class=s data-a=out>Déconnexion</button></div>${inst()}`}
 const bad=()=>({inf:posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id).length,fil:shares.filter(s=>!ss.has(s.id)&&s.author_id!=me.id).length});
 function nav(){const b=bad(),t=[['inf','Infos'],['fil','Fichiers'],['rep','Rapports'],['msg','Messages'],['plus','Plus']];
  $('#nav').innerHTML=t.map(([k,l])=>`<button class="${tab==k?'on':''}" data-a=tab data-v=${k}>${l}${b[k]?`<span class=bd>${b[k]}</span>`:''}</button>`).join('')}
 const show=()=>({inf:postsView,fil:filesView,rep:repView,msg:msgView,plus:plusView})[tab]();
-Object.assign(H,{out:()=>sb.auth.signOut(),ref:boot,am:v=>authView('',v),tab:v=>{tab=v;pv='';cur=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()},pl:v=>{pv=v;plusView()}});
+const u8=b=>{const p='='.repeat((4-b.length%4)%4),r=atob((b+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from([...r].map(c=>c.charCodeAt(0)))};
+const pushOk=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+async function syncPush(){if(!pushOk()||Notification.permission!='granted'||!me)return;try{const reg=await navigator.serviceWorker.ready;let s=await reg.pushManager.getSubscription()||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:u8(VAPID)});const j=s.toJSON();await sb.rpc('pm_save_sub',{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth})}catch(e){console.warn(e)}}
+async function dropPush(){try{if(!pushOk())return;const s=await(await navigator.serviceWorker.ready).pushManager.getSubscription();if(s){await sb.rpc('pm_drop_sub',{p_endpoint:s.endpoint});await s.unsubscribe()}}catch{}}
+const pushCard=()=>pushOk()&&Notification.permission!='granted'?`<div class=card><b>🔔 Notifications</b><p class=m>${Notification.permission=='denied'?"Elles sont bloquées : autorisez-les dans les réglages du navigateur pour ce site.":"Soyez prévenu des nouveaux messages, communiqués et fichiers, même quand l'application est fermée."}</p>${Notification.permission=='denied'?'':'<button class=g data-a=push>Activer les notifications</button>'}</div>`:'';
+H.push=async()=>{const r=await Notification.requestPermission();if(r=='granted'){await syncPush();alert('Notifications activées ✓')}show()};
+H.inst=async()=>{if(dip){dip.prompt();await dip.userChoice;dip=null;return}alert("Pour installer :\n• Android (Chrome) : menu ⋮ puis « Installer l'application » ou « Ajouter à l'écran d'accueil ».\n• iPhone (Safari) : bouton Partager puis « Sur l'écran d'accueil ».")};
+H.inv=async()=>{const t="Installe La Poste MNA, l'application des Églises de la Nouvelle Alliance. Ouvre ce lien (dans Chrome sur Android, Safari sur iPhone), puis choisis « Installer » ou « Ajouter à l'écran d'accueil » : "+location.origin;
+ if(navigator.share){try{await navigator.share({title:'La Poste MNA',text:t,url:location.origin});return}catch(e){if(e.name=='AbortError')return}}
+ window.open('https://wa.me/?text='+encodeURIComponent(t))};
+Object.assign(H,{out:async()=>{await dropPush();sb.auth.signOut()},ref:boot,am:v=>authView('',v),tab:v=>{tab=v;pv='';cur=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()},pl:v=>{pv=v;plusView()}});
 
 /* ---------- Identité et photo ---------- */
 function idView(first){const p=me,o=(a,v)=>Object.entries(a).map(([k,l])=>`<option value=${k} ${v==k?'selected':''}>${l}</option>`).join('');
@@ -75,26 +92,26 @@ function idView(first){const p=me,o=(a,v)=>Object.entries(a).map(([k,l])=>`<opti
  <img id=pp class=ph ${p.photo_path?`data-p="${esc(p.photo_path)}"`:''}><input type=file id=pf accept="image/*" ${p.photo_path?'':'required'}><p class=m style="text-align:center">Photo de profil</p>
  ${t('nom','Nom')}${t('postnom','Post-nom')}${t('prenom','Prénom')}
  <label class=m>Date de naissance</label><input type=date name=birth_date value="${p.birth_date||''}" required>${t('birth_place','Lieu de naissance')}
- <label class=m>Avez-vous participé à l'EBK ?</label><div><label><input class=ck type=radio name=ebk value=oui ${p.ebk===true?'checked':''} required>Oui</label> <label><input class=ck type=radio name=ebk value=non ${p.ebk===false?'checked':''} required>Non</label></div>
- <div id=g1 class=hid><input name=ebk_session placeholder="Session suivie" value="${esc(p.ebk_session)}"></div>
+ ${p.is_super?'':`<label class=m>Avez-vous participé à l'EBK ?</label><div><label><input class=ck type=radio name=ebk value=oui ${p.ebk===true?'checked':''} required>Oui</label> <label><input class=ck type=radio name=ebk value=non ${p.ebk===false?'checked':''} required>Non</label></div>
+ <div id=g1 class=hid><input name=ebk_session placeholder="Session suivie" value="${esc(p.ebk_session)}"></div>`}
  <select name=sexe required><option value="">Sexe…</option>${o({M:'Masculin',F:'Féminin'},p.sexe)}</select>
  <select name=etat_civil required><option value="">État civil…</option>${o({celibataire:'Célibataire',marie:'Marié(e)',veuf:'Veuf / Veuve',divorce:'Divorcé(e)'},p.etat_civil)}</select>
  <h4>Adresse de domicile</h4>${t('adr_pays','Pays')}${t('adr_ville','Ville')}${t('adr_commune','Commune')}${t('adr_quartier','Quartier')}${t('adr_avenue','Avenue')}${t('adr_numero','Numéro')}
  <input name=phone type=tel placeholder="Numéro de téléphone" value="${esc(p.phone)}" required>
- <select name=minister_type required><option value="">Ministre ordonné ou serviteur établi ?</option>${o({ministre:'Ministre ordonné',serviteur:'Serviteur établi'},p.minister_type)}</select>
- <div id=g2 class=hid><input type=number name=ordination_year placeholder="Année d'ordination" min=1950 max=2100 value="${p.ordination_year||''}"><select name=ministry><option value="">Ministère…</option>${o(MIN,p.ministry)}</select><select name=ordination_where>${o({mna:'Ordonné au sein du ministère',dehors:'Ordonné en dehors du ministère'},p.ordination_where)}</select></div>
+ <select name=minister_type required><option value="">Votre statut dans l'église…</option>${o({ministre:'Ministre ordonné',serviteur:'Serviteur établi',membre:"Membre de l'église"},p.minister_type)}</select>
+ <div id=g2 class=hid><input type=number name=ordination_year placeholder="Année d'ordination" min=1950 max=2100 value="${p.ordination_year||''}"><select name=ministry><option value="">Ministère…</option>${o(MIN,p.ministry)}</select>${p.is_super?'':`<select name=ordination_where>${o({mna:'Ordonné au sein du ministère',dehors:'Ordonné en dehors du ministère'},p.ordination_where)}</select>`}</div>
  <button>Enregistrer</button> ${first?'':'<button type=button class=s data-a=pl data-v="">Annuler</button>'}</form></div>`;
- const tg=()=>{const y=$('[name=ebk]:checked')?.value=='oui',m=$('[name=minister_type]').value=='ministre';[['g1',y],['g2',m]].forEach(([id,on])=>{const g=$('#'+id);g.classList.toggle('hid',!on);g.querySelectorAll('input,select').forEach(i=>{i.disabled=!on;i.required=on})})};
+ const tg=()=>{const y=$('[name=ebk]:checked')?.value=='oui',m=$('[name=minister_type]').value=='ministre';[['g1',y],['g2',m]].forEach(([id,on])=>{const g=$('#'+id);if(!g)return;g.classList.toggle('hid',!on);g.querySelectorAll('input,select').forEach(i=>{i.disabled=!on;i.required=on})})};
  $('#idf').onchange=tg;tg();imgs(app);
  $('#pf').onchange=()=>{const f=$('#pf').files[0];if(f)$('#pp').src=URL.createObjectURL(f)};
  $('#idf').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;const f=Object.fromEntries(new FormData(e.target)),file=$('#pf').files[0];let photo=me.photo_path;
   if(file){photo=await upl(await shrink(file,800),'photo.jpg');if(!photo){b.disabled=false;return}}
-  const mn=f.minister_type=='ministre',u={photo_path:photo,nom:f.nom.trim(),postnom:f.postnom.trim(),prenom:f.prenom.trim(),birth_date:f.birth_date,birth_place:f.birth_place.trim(),ebk:f.ebk=='oui',ebk_session:f.ebk=='oui'?f.ebk_session:null,sexe:f.sexe,etat_civil:f.etat_civil,
+  const mn=f.minister_type=='ministre',u={photo_path:photo,nom:f.nom.trim(),postnom:f.postnom.trim(),prenom:f.prenom.trim(),birth_date:f.birth_date,birth_place:f.birth_place.trim(),ebk:p.is_super?null:f.ebk=='oui',ebk_session:f.ebk=='oui'?f.ebk_session:null,sexe:f.sexe,etat_civil:f.etat_civil,
    adr_pays:f.adr_pays,adr_ville:f.adr_ville,adr_commune:f.adr_commune,adr_quartier:f.adr_quartier,adr_avenue:f.adr_avenue,adr_numero:f.adr_numero,phone:f.phone,minister_type:f.minister_type,
-   ordination_year:mn?+f.ordination_year:null,ministry:mn?f.ministry:null,ordination_where:mn?f.ordination_where:null,identity_done:true,full_name:[f.prenom,f.nom,f.postnom].join(' ').trim()};
+   ordination_year:mn?+f.ordination_year:null,ministry:mn?f.ministry:null,ordination_where:mn&&!p.is_super?f.ordination_where:null,identity_done:true,full_name:[f.prenom,f.nom,f.postnom].join(' ').trim()};
   const{error}=await sb.from('pm_profiles').update(u).eq('id',me.id);if(error){b.disabled=false;return alert(error.message)}
   Object.assign(me,u);$('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';first?enter():H.pl('')}}
-const idHtml=p=>`<details><summary class=m>Identité complète</summary><img class=ph data-p="${esc(p.photo_path||'')}" ${p.photo_path?'':'hidden'}><p class=m>${esc([p.nom,p.postnom,p.prenom].join(' '))}<br>Né(e) le ${esc(p.birth_date||'—')} à ${esc(p.birth_place||'—')}<br>${p.sexe=='M'?'Masculin':p.sexe=='F'?'Féminin':'—'} · ${esc(p.etat_civil||'—')}<br>${esc([p.adr_numero,p.adr_avenue,p.adr_quartier,p.adr_commune,p.adr_ville,p.adr_pays].filter(Boolean).join(', ')||'—')}<br>Tél : ${esc(p.phone||'—')}<br>EBK : ${p.ebk?'Oui · '+esc(p.ebk_session||''):p.ebk===false?'Non':'—'}<br>${p.minister_type=='ministre'?`Ministre ordonné : ${MIN[p.ministry]||''}, ${p.ordination_year||''}, ${p.ordination_where=='mna'?'au sein du ministère':'en dehors'}`:p.minister_type=='serviteur'?'Serviteur établi':'—'}</p></details>`;
+const idHtml=p=>`<details><summary class=m>Identité complète</summary><img class=ph data-p="${esc(p.photo_path||'')}" ${p.photo_path?'':'hidden'}><p class=m>${esc([p.nom,p.postnom,p.prenom].join(' '))}<br>Né(e) le ${esc(p.birth_date||'—')} à ${esc(p.birth_place||'—')}<br>${p.sexe=='M'?'Masculin':p.sexe=='F'?'Féminin':'—'} · ${esc(p.etat_civil||'—')}<br>${esc([p.adr_numero,p.adr_avenue,p.adr_quartier,p.adr_commune,p.adr_ville,p.adr_pays].filter(Boolean).join(', ')||'—')}<br>Tél : ${esc(p.phone||'—')}<br>EBK : ${p.ebk?'Oui · '+esc(p.ebk_session||''):p.ebk===false?'Non':'—'}<br>${p.minister_type=='ministre'?`Ministre ordonné : ${MIN[p.ministry]||''}, ${p.ordination_year||''}, ${p.ordination_where=='mna'?'au sein du ministère':p.ordination_where=='dehors'?'en dehors du ministère':''}`:p.minister_type=='serviteur'?'Serviteur établi':p.minister_type=='membre'?"Membre de l'église":'—'}</p></details>`;
 
 /* ---------- Communiqués ---------- */
 async function loadInfo(){const[a,b,c,d]=await Promise.all([sb.from('pm_posts').select('*').order('created_at',{ascending:false}),sb.from('pm_post_views').select('post_id').eq('user_id',me.id),sb.from('pm_shares').select('*').order('created_at',{ascending:false}),sb.from('pm_share_events').select('share_id').eq('user_id',me.id)]);
@@ -108,7 +125,7 @@ function gate(un){$('#nav').innerHTML='';app.innerHTML=`<div class=card><h3>📢
 H.gok=async()=>{await markP();nav();show()};
 async function postsView(){await loadInfo();const adm=me.role_type=='admin',ids=posts.filter(p=>adm||p.author_id==me.id).map(p=>p.id),V={};
  if(ids.length)((await sb.from('pm_post_views').select('post_id,user_name,seen_at').in('post_id',ids)).data||[]).forEach(v=>(V[v.post_id]??=[]).push(v));
- app.innerHTML=(canPub()?'<button data-a=pnew>+ Publier un communiqué</button>':'')+list(posts.map(p=>postCard(p,V,ids.includes(p.id)&&(adm?can('messages')||p.author_id==me.id:true))),'<p class=m>Aucun communiqué pour le moment.</p>');imgs(app);await markP();nav()}
+ app.innerHTML=pushCard()+(canPub()?'<button data-a=pnew>+ Publier un communiqué</button>':'')+list(posts.map(p=>postCard(p,V,ids.includes(p.id)&&(adm?can('messages')||p.author_id==me.id:true))),'<p class=m>Aucun communiqué pour le moment.</p>');imgs(app);await markP();nav()}
 const aud=()=>me.role_type=='admin'?`<select name=zone>${me.is_super||!me.scope_zones?'<option value="">Toute l\'organisation</option>':''}${zones.filter(z=>me.is_super||!me.scope_zones||me.scope_zones.includes(z.id)).map(z=>`<option value=${z.id}>Zone ${esc(z.name)}</option>`).join('')}</select>`:'<p class=m>Visible par les membres de votre zone.</p>';
 H.pnew=()=>{app.innerHTML=`<div class=card><h3>Nouveau communiqué</h3><form id=pf2><input name=title placeholder="Titre" required><textarea name=body rows=5 placeholder="Texte du communiqué"></textarea><label class=m>Image (facultatif)</label><input type=file name=img accept="image/*"><label class=m>Liens de formation (un par ligne : Titre | https://adresse)</label><textarea name=links rows=3 placeholder="Formation YouTube | https://youtube.com/…"></textarea>${aud()}<button>Publier</button> <button type=button class=s data-a=tab data-v=inf>Annuler</button></form></div>`;
  $('#pf2').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;const f=new FormData(e.target),im=f.get('img');let path=null;
@@ -139,10 +156,11 @@ function repView(){const lead=me.role_type=='zone_lead',adm=me.role_type=='admin
  app.innerHTML=`<div class=tabs>${t.map(([k,l])=>`<button class="${sub==k?'on':''}" data-a=sub data-v=${k}>${l}</button>`).join('')}</div><div id=rb></div>`;
  sub=='mine'?mineList():recList()}
 async function mineList(){const{data}=await sb.from('pm_reports').select('id,type,period_label,status').eq('author_id',me.id).order('period_start',{ascending:false});
- $('#rb').innerHTML='<button data-a=new>+ Nouveau rapport</button>'+list((data||[]).map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>${r.status=='draft'?'Brouillon':'Envoyé'}</span></div>`),'<p class=m>Aucun rapport pour le moment.</p>')}
-H.new=()=>formView(null);
+ const dual=has('binome')&&has('berger_poste');
+ $('#rb').innerHTML=(dual?'<button data-a=new data-v=terrain>+ Rapport de terrain</button> <button data-a=new data-v=cellule_hebdo>+ Rapport de cellule</button>':'<button data-a=new>+ Nouveau rapport</button>')+list((data||[]).map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>${r.status=='draft'?'Brouillon':'Envoyé'}</span></div>`),'<p class=m>Aucun rapport pour le moment.</p>')}
+H.new=v=>formView(null,v);
 H.open=async v=>{const{data:r}=await sb.from('pm_reports').select('*').eq('id',v).single();r.status=='draft'&&r.author_id==me.id?formView(r):detailView(r)};
-async function formView(r){const type=r?.type||myType(),d=r?.data||{};let inc=[],sel=new Set(r?.inc||[]);
+async function formView(r,tp){const type=r?.type||tp||myType(),d=r?.data||{};let inc=[],sel=new Set(r?.inc||[]);
  if(type=='zone'){inc=(await sb.from('pm_reports').select('id,type,author_name,period_label').neq('type','zone').eq('status','submitted').order('period_start',{ascending:false}).limit(200)).data||[];
   if(r?.id&&!r.inc)sel=new Set(((await sb.from('pm_report_links').select('report_id').eq('zone_report_id',r.id)).data||[]).map(x=>x.report_id))}
  app.innerHTML=`<div class=card><h3>${TYPES[type]}</h3><form id=rf><label class=m>Date du rapport (début de la semaine)</label><input type=date name=date value=${r?.period_start||today()} required><input name=title placeholder="Titre (facultatif)" value="${esc(r?.title)}">
@@ -207,17 +225,17 @@ async function send(k,text,file){if(!text&&!file)return;let att={};
 setInterval(async()=>{if(tab=='msg'&&cur){const{data}=await sb.from('pm_messages').select('*').order('created_at');if(data&&data.length!=M.length){M=data;drawMsgs()}}},15000);
 
 /* ---------- Plus : profil, programmes, administration ---------- */
-function plusView(){if(!pv){const it=[['prof','👤 Mon profil'],...(['binome','berger_poste'].includes(me.role_type)?[['sched','🗓 Mon programme fixe']]:[]),...(me.role_type=='zone_lead'||can('reports')?[['all','🗓 Programmes de la zone']]:[]),...(me.role_type=='admin'?[['adm','⚙ Administration']]:[])];
-  return app.innerHTML=it.map(([k,l])=>`<div class=card data-a=pl data-v=${k}><b>${l}</b></div>`).join('')+'<div class=card data-a=out><b>⎋ Déconnexion</b></div>'}
+function plusView(){if(!pv){const it=[['prof','👤 Mon profil'],...(has('binome')||has('berger_poste')?[['sched','🗓 Mon programme fixe']]:[]),...(me.role_type=='zone_lead'||can('reports')?[['all','🗓 Programmes de la zone']]:[]),...(me.role_type=='admin'?[['adm','⚙ Administration']]:[])];
+  return app.innerHTML=pushCard()+it.map(([k,l])=>`<div class=card data-a=pl data-v=${k}><b>${l}</b></div>`).join('')+inst()+'<div class=card data-a=out><b>⎋ Déconnexion</b></div>'}
  app.innerHTML='<button class=s data-a=pl data-v="">← Menu</button><div id=pb></div>';({prof:()=>idView(false),sched:schedView,all:schedAll,adm:admView})[pv]()}
 const DJ=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
-async function schedView(){const k=me.role_type=='binome'?'terrain':'cellule',{data}=await sb.from('pm_schedules').select('*').eq('user_id',me.id).order('created_at');
- hs().innerHTML=`<div class=card><h3>Mon programme fixe ${k=='terrain'?'de terrain':'de cellule'}</h3>`+list((data||[]).map(s=>`<div class=card>${esc(s.days.join(', '))} · ${esc(s.heure)}<br><span class=m>Avec : ${esc(s.compagnon||'—')}</span><br><button class=r data-a=scdel data-v=${s.id}>Supprimer</button></div>`),'<p class=m>Aucun programme enregistré.</p>')+`<form id=sf><b>Ajouter un créneau</b><br>${DJ.map(d=>`<label><input class=ck type=checkbox name=d value=${d}>${d}</label><br>`).join('')}<label class=m>Heure</label><input type=time name=h required><input name=c placeholder="Compagnon (nom)" required><button>Ajouter</button></form></div>`;
- $('#sf').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),days=f.getAll('d');if(!days.length)return alert('Choisissez au moins un jour.');
-  const{error}=await sb.from('pm_schedules').insert({days,heure:f.get('h'),compagnon:f.get('c').trim(),user_id:me.id,kind:k});error?alert(error.message):schedView()}}
+async function schedView(){const ks=['binome','berger_poste'].filter(has).map(r=>KT[r]),{data}=await sb.from('pm_schedules').select('*').eq('user_id',me.id).order('created_at');
+ hs().innerHTML=ks.map(([k,l])=>`<div class=card><h3>Mon programme fixe ${l}</h3>`+list((data||[]).filter(s=>s.kind==k).map(s=>`<div class=card>${esc(s.days.join(', '))} · ${esc(s.heure)}<br><span class=m>Avec : ${esc(s.compagnon||'—')}</span><br><button class=r data-a=scdel data-v=${s.id}>Supprimer</button></div>`),'<p class=m>Aucun programme enregistré.</p>')+`<form data-k=${k}><b>Ajouter un créneau</b><br>${DJ.map(d=>`<label><input class=ck type=checkbox name=d value=${d}>${d}</label><br>`).join('')}<label class=m>Heure</label><input type=time name=h required><input name=c placeholder="Compagnon (nom)" required><button>Ajouter</button></form></div>`).join('');
+ hs().querySelectorAll('form[data-k]').forEach(fm=>fm.onsubmit=async e=>{e.preventDefault();const f=new FormData(fm),days=f.getAll('d');if(!days.length)return alert('Choisissez au moins un jour.');
+  const{error}=await sb.from('pm_schedules').insert({days,heure:f.get('h'),compagnon:f.get('c').trim(),user_id:me.id,kind:fm.dataset.k});error?alert(error.message):schedView()})}
 H.scdel=async v=>{if(confirm('Supprimer ce créneau ?')){await sb.from('pm_schedules').delete().eq('id',v);schedView()}};
-async function schedAll(){const d=(await sb.from('pm_schedules').select('*').order('user_name')).data||[],g={};d.forEach(s=>(g[s.user_name]??=[]).push(s));
- hs().innerHTML='<h3>Programmes de la zone</h3>'+list(Object.entries(g).map(([n,a])=>`<div class=card><b>${esc(n)}</b> <span class=tag>${a[0].kind=='terrain'?'Terrain':'Cellule'}</span> <span class=m>${esc(zn(a[0].zone_id))}</span>${a.map(s=>`<br>${esc(s.days.join(', '))} · ${esc(s.heure)} · avec ${esc(s.compagnon||'—')}`).join('')}</div>`),'<p class=m>Aucun programme soumis pour le moment.</p>')}
+async function schedAll(){const d=(await sb.from('pm_schedules').select('*').order('user_name')).data||[],g={};d.forEach(s=>(g[s.user_name+'|'+s.kind]??=[]).push(s));
+ hs().innerHTML='<h3>Programmes de la zone</h3>'+list(Object.values(g).map(a=>`<div class=card><b>${esc(a[0].user_name)}</b> <span class=tag>${a[0].kind=='terrain'?'Terrain':'Cellule'}</span> <span class=m>${esc(zn(a[0].zone_id))}</span>${a.map(s=>`<br>${esc(s.days.join(', '))} · ${esc(s.heure)} · avec ${esc(s.compagnon||'—')}`).join('')}</div>`),'<p class=m>Aucun programme soumis pour le moment.</p>')}
 
 /* ---------- Administration ---------- */
 function admView(){const t=[['mem','Membres',can('members')],['adm','Administrateurs',can('admins')],['zon','Zones',can('zones')]].filter(x=>x[2]);
@@ -229,8 +247,11 @@ async function memList(){const o={pending:0,active:1,blocked:2},d=((await sb.fro
  $('#ab').innerHTML=list(d.map(p=>`<div class=card data-id=${p.id}><b>${esc(p.full_name)}</b> <span class=tag>${{pending:'En attente',active:'Actif',blocked:'Bloqué'}[p.status]}</span><br><span class=m>${esc(p.email)} · ${esc(p.phone||'')} · ${esc(p.unit||'')}${p.identity_done?'':' · identité non remplie'}</span>${p.identity_done?idHtml(p):''}
  <select data-f=role_type>${['binome','serviteur','berger_poste','zone_lead'].map(r=>`<option value=${r} ${p.role_type==r?'selected':''}>${ROLES[r]}</option>`).join('')}</select>
  <select data-f=zone_id><option value="">— zone —</option>${zones.map(z=>`<option value=${z.id} ${p.zone_id==z.id?'selected':''}>${esc(z.name)}</option>`).join('')}</select>
+ <select data-f=extra_role><option value="">Aucun rôle supplémentaire</option><option value=binome ${p.extra_role=='binome'?'selected':''}>Aussi : Évangéliste (binôme)</option><option value=berger_poste ${p.extra_role=='berger_poste'?'selected':''}>Aussi : Berger de Poste</option></select>
  <button data-a=mact data-v=active>${p.status=='active'?'Enregistrer':'Valider'}</button> ${p.status!='blocked'?'<button class=g data-a=mact data-v=blocked>Bloquer</button>':''} <button class=r data-a=mdel>Supprimer</button></div>`),'<p class=m>Aucun membre.</p>');imgs($('#ab'))}
-H.mact=async(v,b)=>{const c=b.closest('[data-id]'),u={status:v,role_type:c.querySelector('[data-f=role_type]').value,zone_id:c.querySelector('[data-f=zone_id]').value||null};
+H.mact=async(v,b)=>{const c=b.closest('[data-id]'),u={status:v,role_type:c.querySelector('[data-f=role_type]').value,zone_id:c.querySelector('[data-f=zone_id]').value||null,extra_role:c.querySelector('[data-f=extra_role]').value||null};
+ if(u.extra_role&&u.extra_role==u.role_type)u.extra_role=null;
+ if(!['binome','berger_poste'].includes(u.role_type)&&u.extra_role&&!['binome','berger_poste'].includes(u.role_type))u.extra_role=null;
  if(v=='active'&&!u.zone_id)return alert('Choisissez une zone.');const{error}=await sb.from('pm_profiles').update(u).eq('id',c.dataset.id);error?alert(error.message):memList()};
 H.mdel=async(v,b)=>{if(!confirm('Supprimer définitivement ce compte ?'))return;const{error}=await sb.rpc('pm_delete_member',{uid:b.closest('[data-id]').dataset.id});error?alert(error.message):memList()};
 async function admList(){const d=(await sb.from('pm_profiles').select('*').order('full_name')).data||[],ad=d.filter(p=>p.role_type=='admin'),cd=d.filter(p=>p.role_type!='admin'&&p.status=='active');
