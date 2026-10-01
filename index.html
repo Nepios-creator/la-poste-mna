@@ -1,45 +1,57 @@
-<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>La Poste MNA</title><meta name="theme-color" content="#14284b"><link rel="manifest" href="manifest.json">
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>La Poste MNA</title><meta name="theme-color" content="#0b1b3f"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-180.png">
 <style>
 :root{--n:#14284b;--b:#7b1e2e;--g:#b8923a;--i:#faf6ec;--l:#ddd5c0}
 *{box-sizing:border-box}body{margin:0;font:16px/1.4 Verdana,system-ui,sans-serif;background:var(--i);color:#222;padding-bottom:70px}
-header{background:var(--n);color:#fff;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--g)}
-header a{color:#fff;margin-left:8px}.c{padding:12px;max-width:720px;margin:auto}
-.card{background:#fff;border:1px solid var(--l);border-radius:10px;padding:12px;margin:10px 0}[data-a=open],[data-a=thr]{cursor:pointer}
+header{background:#0b1b3f;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--g)}
+header img{width:30px;height:30px;border-radius:7px;vertical-align:middle;margin-right:8px}header a{color:#fff;margin-left:8px}.c{padding:12px;max-width:720px;margin:auto}
+.card{background:#fff;border:1px solid var(--l);border-radius:10px;padding:12px;margin:10px 0}[data-a=open],[data-a=thr],[data-a=pl]{cursor:pointer}
 input,select,textarea,button{font:inherit;width:100%;padding:10px;margin:4px 0;border:1px solid #bbb;border-radius:8px;background:#fff}
 button{background:var(--n);color:#fff;border:0;cursor:pointer;width:auto}button.s{background:#fff;color:var(--n);border:1px solid var(--n)}button.r{background:var(--b)}button.g{background:var(--g)}
-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--l);display:flex;padding-bottom:env(safe-area-inset-bottom)}nav button{flex:1;background:none;color:var(--n);border-radius:0;margin:0;padding:14px 4px}nav button.on{border-top:3px solid var(--b);font-weight:700}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--l);display:flex;padding-bottom:env(safe-area-inset-bottom)}nav button{flex:1;background:none;color:var(--n);border-radius:0;margin:0;padding:14px 2px;font-size:13px}nav button.on{border-top:3px solid var(--b);font-weight:700}
+.bd{background:var(--b);color:#fff;border-radius:10px;font-size:11px;padding:0 6px;margin-left:3px}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.tabs button{background:#fff;color:var(--n);border:1px solid var(--n)}.tabs button.on{background:var(--n);color:#fff}
 .m{color:#777;font-size:13px}.tag{display:inline-block;background:var(--l);border-radius:12px;padding:1px 8px;font-size:12px}
 .msg{padding:8px 10px;border-radius:10px;margin:6px 0;border:1px solid var(--l);background:#fff}.me{background:#e8eefb;margin-left:18%}.ot{margin-right:18%}
-.ck{width:auto;margin-right:6px}
+.ck{width:auto;margin-right:6px}.hid{display:none}.lnk{display:inline-block;margin:4px 0;color:var(--n);font-weight:700}
+.ph{width:96px;height:96px;border-radius:50%;object-fit:cover;background:#ddd;display:block;margin:6px auto}.ins{background:#fff8e1;border-left:4px solid var(--g);padding:8px;border-radius:6px;white-space:pre-wrap}
 </style></head><body>
-<header><b>✉ La Poste MNA</b><span id="who"></span></header><div class="c" id="app"></div><nav id="nav"></nav>
+<header><span><img src="icon-192.png" alt=""><b>La Poste MNA</b></span><span id="who"></span></header><div class="c" id="app"></div><nav id="nav"></nav>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 const sb=supabase.createClient('https://aehxiexsotqpmnmsfwgq.supabase.co','sb_publishable_4x9NR7lwOhWvvL4Um-WTAA_756gELy4');
-const $=s=>document.querySelector(s),app=$('#app'),H={};
+const $=s=>document.querySelector(s),app=$('#app'),H={},hs=()=>$('#pb')||app;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ROLES={binome:'Évangéliste (binôme)',serviteur:'Serviteur/Servante',berger_poste:'Berger de Poste',zone_lead:'Responsable de zone',admin:'Administration'};
 const TYPES={terrain:'Rapport de terrain',cellule_hebdo:'Rapport hebdomadaire de cellule',zone:'Rapport de zone'};
-const PL={members:'Gérer les membres (valider, bloquer, supprimer)',zones:'Gérer les zones',reports:'Lire les rapports de zone',messages:'Envoyer des messages',admins:'Gérer les administrateurs'};
+const PL={members:'Gérer les membres (valider, bloquer, supprimer)',zones:'Gérer les zones',reports:'Lire les rapports de zone et les programmes',messages:'Envoyer des messages et publier (communiqués, fichiers)',admins:'Gérer les administrateurs'};
+const MIN={apotre:'Apôtre',prophete:'Prophète',evangeliste:'Évangéliste',pasteur:'Pasteur',docteur:'Docteur'};
 const F={terrain:[['secteur','Secteur visité','t'],['foyers','Foyers visités','n'],['contacts','Personnes rencontrées','n'],['etudes','Études à domicile en cours','n'],['nouveaux','Nouveaux contacts','n'],['obs','Observations','a']],
 cellule_hebdo:[['cellule','Cellule / lieu','t'],['programme','Programme du jour','s:Formation envoyée|Rappel des Vérités'],['presents','Effectif présent','n'],['nouveaux','Nouveaux venus','n'],['conversions','Conversions','n'],['multi','Cellule multipliée cette semaine ?','s:Non|Oui'],['offrande','Offrande (scellée) : montant','t'],['obs','Observations','a']],
 zone:[['secteurs','Secteurs actifs','n'],['binomes','Binômes actifs','n'],['foyers','Foyers visités','n'],['nouveaux_t','Nouveaux contacts (terrain)','n'],['etudes','Études en cours','n'],['cellules','Cellules actives','n'],['presents','Effectif total des cellules','n'],['nouveaux_c','Nouveaux venus (cellules)','n'],['conversions','Conversions','n'],['multi','Cellules multipliées','n'],['offrandes','Offrandes (total)','t'],['obs','Observations','a']]};
-let me,zones=[],tab='rep',sub='mine',asub='mem',W,coll,P={},M=[],T=[],cur=null;
+let me,zones=[],tab='inf',pv='',sub='mine',asub='mem',W,coll,P={},M=[],T=[],cur=null,posts=[],shares=[],sp=new Set(),ss=new Set();
 const can=p=>me.role_type=='admin'&&(me.is_super||me.perms?.[p]);
+const canPub=()=>me.role_type=='zone_lead'||can('messages');
 const myType=()=>({binome:'terrain',serviteur:'cellule_hebdo',berger_poste:'cellule_hebdo',zone_lead:'zone'})[me.role_type];
 const today=()=>new Date().toISOString().slice(0,10);
+const fd=d=>new Date(d).toLocaleString('fr',{dateStyle:'short',timeStyle:'short'});
+const zn=id=>zones.find(z=>z.id==id)?.name||'';
 const list=(a,e='<p class=m>Rien à afficher.</p>')=>a.length?a.join(''):e;
 const body=x=>F[x.type].map(([k,l])=>`<p><span class=m>${l}</span><br>${esc(x.data?.[k]||'—')}</p>`).join('');
+const sign=async(p,dl)=>(await sb.storage.from('pm-files').createSignedUrl(p,3600,dl?{download:dl}:undefined)).data?.signedUrl;
+const imgs=el=>el.querySelectorAll('img[data-p]').forEach(async i=>{const u=await sign(i.dataset.p);if(u)i.src=u});
+const shrink=(f,max)=>new Promise(r=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);c.toBlob(r,'image/jpeg',.8)};i.src=URL.createObjectURL(f)});
+const upl=async(f,n)=>{const path=`${me.id}/${Date.now()}_${n.replace(/[^\w.\-]/g,'_')}`;const{error}=await sb.storage.from('pm-files').upload(path,f,{contentType:f.type||'application/octet-stream'});if(error){alert('Fichier refusé : '+error.message);return null}return path};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b&&H[b.dataset.a]){e.preventDefault();H[b.dataset.a](b.dataset.v,b)}});
 const loadZ=async()=>zones=(await sb.from('pm_zones').select('*').order('name')).data||[];
 
+/* ---------- Démarrage ---------- */
 async function boot(){const{data:{session}}=await sb.auth.getSession();if(!session)return authView();
  me=(await sb.from('pm_profiles').select('*').eq('id',session.user.id).maybeSingle()).data;
  if(!me){await sb.auth.signOut();return authView("Profil introuvable : inscrivez-vous d'abord.",'up')}
  $('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';
  if(me.status!='active')return stateView();
- await loadZ();nav();show()}
+ await loadZ();if(!me.identity_done)return idView(true);enter()}
+async function enter(){await loadInfo();const un=posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id);if(un.length)return gate(un);nav();show()}
 async function authView(msg,mode='in'){await loadZ();$('#nav').innerHTML='';$('#who').innerHTML='';
  app.innerHTML=`<div class=card><div class=tabs><button class="${mode=='in'?'on':''}" data-a=am data-v=in>Connexion</button><button class="${mode=='up'?'on':''}" data-a=am data-v=up>Inscription</button></div><p class=m>${esc(msg||'')}</p><form id=af>
  ${mode=='up'?`<input name=full_name placeholder="Nom complet" required><input name=phone placeholder="Téléphone / WhatsApp"><select name=role_type required><option value="">Votre fonction…</option>${['binome','serviteur','berger_poste','zone_lead'].map(r=>`<option value=${r}>${ROLES[r]}</option>`).join('')}</select><select name=zone_id><option value="">Votre zone…</option>${zones.map(z=>`<option value=${z.id}>${esc(z.name)}</option>`).join('')}</select><input name=unit placeholder="Secteur ou cellule">`:''}
@@ -50,10 +62,74 @@ async function authView(msg,mode='in'){await loadZ();$('#nav').innerHTML='';$('#
   r.error?authView(r.error.message,mode):boot()}}
 function stateView(){$('#nav').innerHTML='';const bl=me.status=='blocked';
  app.innerHTML=`<div class=card><h3>${bl?'Compte bloqué':'En attente de validation'}</h3><p>${bl?"Votre accès a été suspendu par l'administration.":"Votre inscription est bien reçue. L'administration doit la valider avant d'activer votre espace."}</p><button data-a=ref>Actualiser</button> <button class=s data-a=out>Déconnexion</button></div>`}
-function nav(){const t=[['rep','Rapports'],['msg','Messages']];if(me.role_type=='admin')t.push(['adm','Administration']);
- $('#nav').innerHTML=t.map(([k,l])=>`<button class="${tab==k?'on':''}" data-a=tab data-v=${k}>${l}</button>`).join('')}
-const show=()=>({rep:repView,msg:msgView,adm:admView})[tab]();
-Object.assign(H,{out:()=>sb.auth.signOut(),ref:boot,am:v=>authView('',v),tab:v=>{tab=v;cur=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()}});
+const bad=()=>({inf:posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id).length,fil:shares.filter(s=>!ss.has(s.id)&&s.author_id!=me.id).length});
+function nav(){const b=bad(),t=[['inf','Infos'],['fil','Fichiers'],['rep','Rapports'],['msg','Messages'],['plus','Plus']];
+ $('#nav').innerHTML=t.map(([k,l])=>`<button class="${tab==k?'on':''}" data-a=tab data-v=${k}>${l}${b[k]?`<span class=bd>${b[k]}</span>`:''}</button>`).join('')}
+const show=()=>({inf:postsView,fil:filesView,rep:repView,msg:msgView,plus:plusView})[tab]();
+Object.assign(H,{out:()=>sb.auth.signOut(),ref:boot,am:v=>authView('',v),tab:v=>{tab=v;pv='';cur=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()},pl:v=>{pv=v;plusView()}});
+
+/* ---------- Identité et photo ---------- */
+function idView(first){const p=me,o=(a,v)=>Object.entries(a).map(([k,l])=>`<option value=${k} ${v==k?'selected':''}>${l}</option>`).join('');
+ const t=(n,ph)=>`<input name=${n} placeholder="${ph}" value="${esc(p[n])}" required>`;$('#nav').innerHTML=first?'':$('#nav').innerHTML;
+ hs().innerHTML=`<div class=card><h3>${first?'Complétez votre identité':'Mon profil'}</h3>${first?'<p class=m>Avant de continuer, ajoutez votre photo de profil et remplissez ce formulaire complet.</p>':''}<form id=idf>
+ <img id=pp class=ph ${p.photo_path?`data-p="${esc(p.photo_path)}"`:''}><input type=file id=pf accept="image/*" ${p.photo_path?'':'required'}><p class=m style="text-align:center">Photo de profil</p>
+ ${t('nom','Nom')}${t('postnom','Post-nom')}${t('prenom','Prénom')}
+ <label class=m>Date de naissance</label><input type=date name=birth_date value="${p.birth_date||''}" required>${t('birth_place','Lieu de naissance')}
+ <label class=m>Avez-vous participé à l'EBK ?</label><div><label><input class=ck type=radio name=ebk value=oui ${p.ebk===true?'checked':''} required>Oui</label> <label><input class=ck type=radio name=ebk value=non ${p.ebk===false?'checked':''} required>Non</label></div>
+ <div id=g1 class=hid><input name=ebk_session placeholder="Session suivie" value="${esc(p.ebk_session)}"></div>
+ <select name=sexe required><option value="">Sexe…</option>${o({M:'Masculin',F:'Féminin'},p.sexe)}</select>
+ <select name=etat_civil required><option value="">État civil…</option>${o({celibataire:'Célibataire',marie:'Marié(e)',veuf:'Veuf / Veuve',divorce:'Divorcé(e)'},p.etat_civil)}</select>
+ <h4>Adresse de domicile</h4>${t('adr_pays','Pays')}${t('adr_ville','Ville')}${t('adr_commune','Commune')}${t('adr_quartier','Quartier')}${t('adr_avenue','Avenue')}${t('adr_numero','Numéro')}
+ <input name=phone type=tel placeholder="Numéro de téléphone" value="${esc(p.phone)}" required>
+ <select name=minister_type required><option value="">Ministre ordonné ou serviteur établi ?</option>${o({ministre:'Ministre ordonné',serviteur:'Serviteur établi'},p.minister_type)}</select>
+ <div id=g2 class=hid><input type=number name=ordination_year placeholder="Année d'ordination" min=1950 max=2100 value="${p.ordination_year||''}"><select name=ministry><option value="">Ministère…</option>${o(MIN,p.ministry)}</select><select name=ordination_where>${o({mna:'Ordonné au sein du ministère',dehors:'Ordonné en dehors du ministère'},p.ordination_where)}</select></div>
+ <button>Enregistrer</button> ${first?'':'<button type=button class=s data-a=pl data-v="">Annuler</button>'}</form></div>`;
+ const tg=()=>{const y=$('[name=ebk]:checked')?.value=='oui',m=$('[name=minister_type]').value=='ministre';[['g1',y],['g2',m]].forEach(([id,on])=>{const g=$('#'+id);g.classList.toggle('hid',!on);g.querySelectorAll('input,select').forEach(i=>{i.disabled=!on;i.required=on})})};
+ $('#idf').onchange=tg;tg();imgs(app);
+ $('#pf').onchange=()=>{const f=$('#pf').files[0];if(f)$('#pp').src=URL.createObjectURL(f)};
+ $('#idf').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;const f=Object.fromEntries(new FormData(e.target)),file=$('#pf').files[0];let photo=me.photo_path;
+  if(file){photo=await upl(await shrink(file,800),'photo.jpg');if(!photo){b.disabled=false;return}}
+  const mn=f.minister_type=='ministre',u={photo_path:photo,nom:f.nom.trim(),postnom:f.postnom.trim(),prenom:f.prenom.trim(),birth_date:f.birth_date,birth_place:f.birth_place.trim(),ebk:f.ebk=='oui',ebk_session:f.ebk=='oui'?f.ebk_session:null,sexe:f.sexe,etat_civil:f.etat_civil,
+   adr_pays:f.adr_pays,adr_ville:f.adr_ville,adr_commune:f.adr_commune,adr_quartier:f.adr_quartier,adr_avenue:f.adr_avenue,adr_numero:f.adr_numero,phone:f.phone,minister_type:f.minister_type,
+   ordination_year:mn?+f.ordination_year:null,ministry:mn?f.ministry:null,ordination_where:mn?f.ordination_where:null,identity_done:true,full_name:[f.prenom,f.nom,f.postnom].join(' ').trim()};
+  const{error}=await sb.from('pm_profiles').update(u).eq('id',me.id);if(error){b.disabled=false;return alert(error.message)}
+  Object.assign(me,u);$('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';first?enter():H.pl('')}}
+const idHtml=p=>`<details><summary class=m>Identité complète</summary><img class=ph data-p="${esc(p.photo_path||'')}" ${p.photo_path?'':'hidden'}><p class=m>${esc([p.nom,p.postnom,p.prenom].join(' '))}<br>Né(e) le ${esc(p.birth_date||'—')} à ${esc(p.birth_place||'—')}<br>${p.sexe=='M'?'Masculin':p.sexe=='F'?'Féminin':'—'} · ${esc(p.etat_civil||'—')}<br>${esc([p.adr_numero,p.adr_avenue,p.adr_quartier,p.adr_commune,p.adr_ville,p.adr_pays].filter(Boolean).join(', ')||'—')}<br>Tél : ${esc(p.phone||'—')}<br>EBK : ${p.ebk?'Oui · '+esc(p.ebk_session||''):p.ebk===false?'Non':'—'}<br>${p.minister_type=='ministre'?`Ministre ordonné : ${MIN[p.ministry]||''}, ${p.ordination_year||''}, ${p.ordination_where=='mna'?'au sein du ministère':'en dehors'}`:p.minister_type=='serviteur'?'Serviteur établi':'—'}</p></details>`;
+
+/* ---------- Communiqués ---------- */
+async function loadInfo(){const[a,b,c,d]=await Promise.all([sb.from('pm_posts').select('*').order('created_at',{ascending:false}),sb.from('pm_post_views').select('post_id').eq('user_id',me.id),sb.from('pm_shares').select('*').order('created_at',{ascending:false}),sb.from('pm_share_events').select('share_id').eq('user_id',me.id)]);
+ posts=a.data||[];shares=c.data||[];sp=new Set((b.data||[]).map(x=>x.post_id));ss=new Set((d.data||[]).map(x=>x.share_id))}
+async function markP(){const r=posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id).map(p=>({post_id:p.id,user_id:me.id}));if(r.length){await sb.from('pm_post_views').upsert(r,{onConflict:'post_id,user_id',ignoreDuplicates:true});r.forEach(x=>sp.add(x.post_id))}}
+async function markS(){const r=shares.filter(s=>!ss.has(s.id)&&s.author_id!=me.id).map(s=>({share_id:s.id,user_id:me.id}));if(r.length){await sb.from('pm_share_events').upsert(r,{onConflict:'share_id,user_id',ignoreDuplicates:true});r.forEach(x=>ss.add(x.share_id))}}
+const lk=l=>{try{const u=new URL(l.url);return/^https?:$/.test(u.protocol)?`<a class=lnk href="${esc(u.href)}" target=_blank rel=noopener>🔗 ${esc(l.label||u.hostname)}</a><br>`:''}catch{return''}};
+const vwr=(a,k)=>a?`<details><summary class=m>${k}</summary>${list(a.map(v=>`<div class=m>${esc(v.user_name)} · ${fd(v.seen_at)}${v.downloaded_at?' · ⬇ '+fd(v.downloaded_at):''}</div>`),'<div class=m>Personne pour le moment.</div>')}</details>`:'';
+const postCard=(p,V,own)=>`<div class=card><b>${esc(p.title)}</b><br><span class=m>${esc(p.author_name)} · ${fd(p.created_at)} · ${p.zone_id?'Zone '+esc(zn(p.zone_id)):'Tous'}</span><p style="white-space:pre-wrap">${esc(p.body)}</p>${p.image_path?`<img data-p="${esc(p.image_path)}" style="max-width:100%;border-radius:8px">`:''}<div>${(p.links||[]).map(lk).join('')}</div>${own?vwr(V?.[p.id]||[],`👁 Vu par ${(V?.[p.id]||[]).length}`)+`<button class=r data-a=pdel data-v=${p.id}>Supprimer</button>`:''}</div>`;
+function gate(un){$('#nav').innerHTML='';app.innerHTML=`<div class=card><h3>📢 Communiqués</h3><p class=m>Lisez ces communiqués avant de continuer.</p></div>${un.map(p=>postCard(p)).join('')}<button class=g data-a=gok>J'ai lu, continuer</button>`;imgs(app)}
+H.gok=async()=>{await markP();nav();show()};
+async function postsView(){await loadInfo();const adm=me.role_type=='admin',ids=posts.filter(p=>adm||p.author_id==me.id).map(p=>p.id),V={};
+ if(ids.length)((await sb.from('pm_post_views').select('post_id,user_name,seen_at').in('post_id',ids)).data||[]).forEach(v=>(V[v.post_id]??=[]).push(v));
+ app.innerHTML=(canPub()?'<button data-a=pnew>+ Publier un communiqué</button>':'')+list(posts.map(p=>postCard(p,V,ids.includes(p.id)&&(adm?can('messages')||p.author_id==me.id:true))),'<p class=m>Aucun communiqué pour le moment.</p>');imgs(app);await markP();nav()}
+const aud=()=>me.role_type=='admin'?`<select name=zone>${me.is_super||!me.scope_zones?'<option value="">Toute l\'organisation</option>':''}${zones.filter(z=>me.is_super||!me.scope_zones||me.scope_zones.includes(z.id)).map(z=>`<option value=${z.id}>Zone ${esc(z.name)}</option>`).join('')}</select>`:'<p class=m>Visible par les membres de votre zone.</p>';
+H.pnew=()=>{app.innerHTML=`<div class=card><h3>Nouveau communiqué</h3><form id=pf2><input name=title placeholder="Titre" required><textarea name=body rows=5 placeholder="Texte du communiqué"></textarea><label class=m>Image (facultatif)</label><input type=file name=img accept="image/*"><label class=m>Liens de formation (un par ligne : Titre | https://adresse)</label><textarea name=links rows=3 placeholder="Formation YouTube | https://youtube.com/…"></textarea>${aud()}<button>Publier</button> <button type=button class=s data-a=tab data-v=inf>Annuler</button></form></div>`;
+ $('#pf2').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;const f=new FormData(e.target),im=f.get('img');let path=null;
+  if(im&&im.size){path=await upl(await shrink(im,1280),'image.jpg');if(!path){b.disabled=false;return}}
+  const links=f.get('links').split('\n').map(l=>{const[a,c]=l.includes('|')?l.split('|'):['',l];return{label:a.trim(),url:c.trim()}}).filter(x=>/^https?:\/\//i.test(x.url));
+  const{error}=await sb.from('pm_posts').insert({title:f.get('title').trim(),body:f.get('body').trim()||null,image_path:path,links,zone_id:f.get('zone')||null});
+  if(error){b.disabled=false;return alert(error.message)}postsView()}};
+H.pdel=async v=>{if(confirm('Supprimer ce communiqué ?')){const{error}=await sb.from('pm_posts').delete().eq('id',v);error?alert(error.message):postsView()}};
+
+/* ---------- Fichiers à télécharger ---------- */
+async function filesView(){await loadInfo();const adm=me.role_type=='admin',ids=shares.filter(s=>adm||s.author_id==me.id).map(s=>s.id),V={};
+ if(ids.length)((await sb.from('pm_share_events').select('share_id,user_name,seen_at,downloaded_at').in('share_id',ids)).data||[]).forEach(v=>(V[v.share_id]??=[]).push(v));
+ app.innerHTML=(canPub()?'<button data-a=snew>+ Envoyer un fichier</button>':'')+list(shares.map(s=>{const v=V[s.id],own=ids.includes(s.id);return`<div class=card><b>${esc(s.title)}</b><br><span class=m>${esc(s.author_name)} · ${fd(s.created_at)} · ${s.zone_id?'Zone '+esc(zn(s.zone_id)):'Tous'}</span><div class=ins>${esc(s.instruction)}</div><p>📄 ${esc(s.file_name)}</p><button class=g data-a=dls data-v=${s.id}>⬇ Télécharger</button>${own?`<br>${vwr(v||[],`👁 Vu par ${(v||[]).length} · ⬇ Téléchargé par ${(v||[]).filter(x=>x.downloaded_at).length}`)}<button class=r data-a=sdel data-v=${s.id}>Supprimer</button>`:''}</div>`}),'<p class=m>Aucun fichier pour le moment.</p>');await markS();nav()}
+H.snew=()=>{app.innerHTML=`<div class=card><h3>Envoyer un fichier</h3><form id=sf2><input name=title placeholder="Titre du fichier" required><textarea name=ins rows=4 placeholder="Instruction : que doit-on faire de ce fichier ?" required></textarea><input type=file name=file required accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt">${aud()}<p class=m>Taille maximale : 20 Mo.</p><button>Envoyer</button> <button type=button class=s data-a=tab data-v=fil>Annuler</button></form></div>`;
+ $('#sf2').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;const f=new FormData(e.target),fl=f.get('file'),path=await upl(fl,fl.name);if(!path){b.disabled=false;return}
+  const{error}=await sb.from('pm_shares').insert({title:f.get('title').trim(),instruction:f.get('ins').trim(),file_path:path,file_name:fl.name,zone_id:f.get('zone')||null});
+  if(error){b.disabled=false;return alert(error.message)}filesView()}};
+H.dls=async v=>{const s=shares.find(x=>x.id==v),u=await sign(s.file_path,s.file_name);if(!u)return alert('Fichier introuvable.');
+ if(s.author_id!=me.id)await sb.from('pm_share_events').upsert({share_id:v,user_id:me.id,downloaded_at:new Date().toISOString()},{onConflict:'share_id,user_id'});
+ const a=document.createElement('a');a.href=u;a.download=s.file_name;document.body.appendChild(a);a.click();a.remove()};
+H.sdel=async v=>{if(confirm('Supprimer ce fichier ?')){const{error}=await sb.from('pm_shares').delete().eq('id',v);error?alert(error.message):filesView()}};
 
 /* ---------- Rapports ---------- */
 function repView(){const lead=me.role_type=='zone_lead',adm=me.role_type=='admin';
@@ -90,7 +166,7 @@ async function detailView(r){let extra='',mk='';
   if(ids.length)extra='<h4>Rapports inclus</h4>'+list(((await sb.from('pm_reports').select('*').in('id',ids).order('period_start')).data||[]).map(x=>`<details class=card><summary>${TYPES[x.type]} · ${esc(x.author_name)}</summary>${body(x)}</details>`))}
  if(r.author_id!=me.id){const m=(await sb.from('pm_report_marks').select('*').eq('report_id',r.id).eq('user_id',me.id).maybeSingle()).data||{};
   mk=`<div class=card><b>Classement</b><input id=mf placeholder="Dossier (ex. Ngaliema, Octobre…)" value="${esc(m.folder)}"><label><input class=ck type=checkbox id=ms ${m.starred?'checked':''}>⭐ Important</label><br><button data-a=mark data-v=${r.id}>Classer</button></div>`}
- app.innerHTML=`<button class=s data-a=tab data-v=rep>← Retour</button><div class=card><h3>${TYPES[r.type]}</h3><p class=m>${esc(r.author_name)} · ${esc(zones.find(z=>z.id==r.zone_id)?.name||'')} · ${esc(r.period_label)}<br>Envoyé le ${r.submitted_at?new Date(r.submitted_at).toLocaleDateString('fr'):'—'}</p>${body(r)}</div>${extra}${mk}`}
+ app.innerHTML=`<button class=s data-a=tab data-v=rep>← Retour</button><div class=card><h3>${TYPES[r.type]}</h3><p class=m>${esc(r.author_name)} · ${esc(zn(r.zone_id))} · ${esc(r.period_label)}<br>Envoyé le ${r.submitted_at?new Date(r.submitted_at).toLocaleDateString('fr'):'—'}</p>${body(r)}</div>${extra}${mk}`}
 H.mark=async v=>{const{error}=await sb.from('pm_report_marks').upsert({user_id:me.id,report_id:v,folder:$('#mf').value.trim()||null,starred:$('#ms').checked});alert(error?error.message:'Classé ✓')};
 async function recList(){const adm=me.role_type=='admin';
  const[{data:rs},{data:mk}]=await Promise.all([sb.from('pm_reports').select('id,type,author_name,period_label,period_start,title').eq('status','submitted').order('period_start',{ascending:false}).limit(500),sb.from('pm_report_marks').select('*').eq('user_id',me.id)]);
@@ -103,7 +179,7 @@ async function recList(){const adm=me.role_type=='admin';
 
 /* ---------- Messages ---------- */
 async function msgView(){cur=null;const adm=me.role_type=='admin',lead=me.role_type=='zone_lead';
- const[{data:ps},{data:ms}]=await Promise.all([sb.from('pm_profiles').select('id,full_name,role_type,zone_id').eq('status','active'),sb.from('pm_messages').select('*').order('created_at')]);
+ const[{data:ps},{data:ms}]=await Promise.all([sb.from('pm_dir').select('id,full_name,role_type,zone_id').eq('status','active'),sb.from('pm_messages').select('*').order('created_at')]);
  P=Object.fromEntries((ps||[]).map(p=>[p.id,p]));M=ms||[];
  const ok=p=>p.id!=me.id&&(adm||(lead?(p.role_type=='admin'||p.zone_id==me.zone_id):(p.role_type=='zone_lead'&&p.zone_id==me.zone_id)));
  const nm=p=>p.full_name+' · '+ROLES[p.role_type];
@@ -121,27 +197,39 @@ function convView(k){cur=k;const t=T.find(x=>x.k==k);
  if(!t.ro)$('#cf').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),file=f.get('f');await send(k,f.get('t').trim(),file&&file.size?file:null);e.target.reset()};
  drawMsgs()}
 function drawMsgs(){const el=$('#ml');if(!el)return;
- el.innerHTML=list(thread(cur).map(m=>`<div class="msg ${m.sender_id==me.id?'me':'ot'}"><span class=m>${esc(P[m.sender_id]?.full_name||'')} · ${new Date(m.created_at).toLocaleString('fr')}</span><br>${esc(m.body||'')}${m.file_path?(m.file_kind=='image'?`<br><img data-p="${esc(m.file_path)}" style="max-width:100%;border-radius:8px">`:`<br><a href=# data-a=dl data-v="${esc(m.file_path)}">📎 ${esc(m.file_name)}</a>`):''}</div>`),'<p class=m>Aucun message.</p>');
- el.querySelectorAll('img[data-p]').forEach(async i=>{const{data}=await sb.storage.from('pm-files').createSignedUrl(i.dataset.p,3600);if(data)i.src=data.signedUrl})}
-H.dl=async v=>{const{data}=await sb.storage.from('pm-files').createSignedUrl(v,300);if(data)window.open(data.signedUrl)};
+ el.innerHTML=list(thread(cur).map(m=>`<div class="msg ${m.sender_id==me.id?'me':'ot'}"><span class=m>${esc(P[m.sender_id]?.full_name||'')} · ${fd(m.created_at)}</span><br>${esc(m.body||'')}${m.file_path?(m.file_kind=='image'?`<br><img data-p="${esc(m.file_path)}" style="max-width:100%;border-radius:8px">`:`<br><a href=# data-a=dl data-v="${esc(m.file_path)}">📎 ${esc(m.file_name)}</a>`):''}</div>`),'<p class=m>Aucun message.</p>');imgs(el)}
+H.dl=async v=>{const u=await sign(v);if(u)window.open(u)};
 async function send(k,text,file){if(!text&&!file)return;let att={};
- if(file){const path=`${me.id}/${Date.now()}_${file.name.replace(/[^\w.\-]/g,'_')}`;const u=await sb.storage.from('pm-files').upload(path,file);if(u.error)return alert('Fichier refusé : '+u.error.message);att={file_path:path,file_name:file.name,file_kind:file.type.startsWith('image/')?'image':'document'}}
+ if(file){const path=await upl(file,file.name);if(!path)return;att={file_path:path,file_name:file.name,file_kind:file.type.startsWith('image/')?'image':'document'}}
  const to=k=='bc:all'?{audience:'all'}:k.startsWith('bc:')?{audience:'zone',zone_id:k.slice(3)}:{recipient_id:k};
  const r=await sb.from('pm_messages').insert({sender_id:me.id,body:text||null,...att,...to});if(r.error)return alert('Envoi refusé : '+r.error.message);
  M=(await sb.from('pm_messages').select('*').order('created_at')).data||M;drawMsgs()}
 setInterval(async()=>{if(tab=='msg'&&cur){const{data}=await sb.from('pm_messages').select('*').order('created_at');if(data&&data.length!=M.length){M=data;drawMsgs()}}},15000);
 
+/* ---------- Plus : profil, programmes, administration ---------- */
+function plusView(){if(!pv){const it=[['prof','👤 Mon profil'],...(['binome','berger_poste'].includes(me.role_type)?[['sched','🗓 Mon programme fixe']]:[]),...(me.role_type=='zone_lead'||can('reports')?[['all','🗓 Programmes de la zone']]:[]),...(me.role_type=='admin'?[['adm','⚙ Administration']]:[])];
+  return app.innerHTML=it.map(([k,l])=>`<div class=card data-a=pl data-v=${k}><b>${l}</b></div>`).join('')+'<div class=card data-a=out><b>⎋ Déconnexion</b></div>'}
+ app.innerHTML='<button class=s data-a=pl data-v="">← Menu</button><div id=pb></div>';({prof:()=>idView(false),sched:schedView,all:schedAll,adm:admView})[pv]()}
+const DJ=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+async function schedView(){const k=me.role_type=='binome'?'terrain':'cellule',{data}=await sb.from('pm_schedules').select('*').eq('user_id',me.id).order('created_at');
+ hs().innerHTML=`<div class=card><h3>Mon programme fixe ${k=='terrain'?'de terrain':'de cellule'}</h3>`+list((data||[]).map(s=>`<div class=card>${esc(s.days.join(', '))} · ${esc(s.heure)}<br><span class=m>Avec : ${esc(s.compagnon||'—')}</span><br><button class=r data-a=scdel data-v=${s.id}>Supprimer</button></div>`),'<p class=m>Aucun programme enregistré.</p>')+`<form id=sf><b>Ajouter un créneau</b><br>${DJ.map(d=>`<label><input class=ck type=checkbox name=d value=${d}>${d}</label><br>`).join('')}<label class=m>Heure</label><input type=time name=h required><input name=c placeholder="Compagnon (nom)" required><button>Ajouter</button></form></div>`;
+ $('#sf').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),days=f.getAll('d');if(!days.length)return alert('Choisissez au moins un jour.');
+  const{error}=await sb.from('pm_schedules').insert({days,heure:f.get('h'),compagnon:f.get('c').trim(),user_id:me.id,kind:k});error?alert(error.message):schedView()}}
+H.scdel=async v=>{if(confirm('Supprimer ce créneau ?')){await sb.from('pm_schedules').delete().eq('id',v);schedView()}};
+async function schedAll(){const d=(await sb.from('pm_schedules').select('*').order('user_name')).data||[],g={};d.forEach(s=>(g[s.user_name]??=[]).push(s));
+ hs().innerHTML='<h3>Programmes de la zone</h3>'+list(Object.entries(g).map(([n,a])=>`<div class=card><b>${esc(n)}</b> <span class=tag>${a[0].kind=='terrain'?'Terrain':'Cellule'}</span> <span class=m>${esc(zn(a[0].zone_id))}</span>${a.map(s=>`<br>${esc(s.days.join(', '))} · ${esc(s.heure)} · avec ${esc(s.compagnon||'—')}`).join('')}</div>`),'<p class=m>Aucun programme soumis pour le moment.</p>')}
+
 /* ---------- Administration ---------- */
 function admView(){const t=[['mem','Membres',can('members')],['adm','Administrateurs',can('admins')],['zon','Zones',can('zones')]].filter(x=>x[2]);
- if(!t.length)return app.innerHTML='<div class=card>Aucun droit d’administration attribué pour le moment.</div>';
+ if(!t.length)return hs().innerHTML='<div class=card>Aucun droit d’administration attribué pour le moment.</div>';
  if(!t.find(x=>x[0]==asub))asub=t[0][0];
- app.innerHTML=`<div class=tabs>${t.map(([k,l])=>`<button class="${asub==k?'on':''}" data-a=asub data-v=${k}>${l}</button>`).join('')}</div><div id=ab></div>`;
+ hs().innerHTML=`<div class=tabs>${t.map(([k,l])=>`<button class="${asub==k?'on':''}" data-a=asub data-v=${k}>${l}</button>`).join('')}</div><div id=ab></div>`;
  ({mem:memList,adm:admList,zon:zonList})[asub]()}
 async function memList(){const o={pending:0,active:1,blocked:2},d=((await sb.from('pm_profiles').select('*').neq('role_type','admin')).data||[]).sort((a,b)=>o[a.status]-o[b.status]);
- $('#ab').innerHTML=list(d.map(p=>`<div class=card data-id=${p.id}><b>${esc(p.full_name)}</b> <span class=tag>${{pending:'En attente',active:'Actif',blocked:'Bloqué'}[p.status]}</span><br><span class=m>${esc(p.email)} · ${esc(p.phone||'')} · ${esc(p.unit||'')}</span>
+ $('#ab').innerHTML=list(d.map(p=>`<div class=card data-id=${p.id}><b>${esc(p.full_name)}</b> <span class=tag>${{pending:'En attente',active:'Actif',blocked:'Bloqué'}[p.status]}</span><br><span class=m>${esc(p.email)} · ${esc(p.phone||'')} · ${esc(p.unit||'')}${p.identity_done?'':' · identité non remplie'}</span>${p.identity_done?idHtml(p):''}
  <select data-f=role_type>${['binome','serviteur','berger_poste','zone_lead'].map(r=>`<option value=${r} ${p.role_type==r?'selected':''}>${ROLES[r]}</option>`).join('')}</select>
  <select data-f=zone_id><option value="">— zone —</option>${zones.map(z=>`<option value=${z.id} ${p.zone_id==z.id?'selected':''}>${esc(z.name)}</option>`).join('')}</select>
- <button data-a=mact data-v=active>${p.status=='active'?'Enregistrer':'Valider'}</button> ${p.status!='blocked'?'<button class=g data-a=mact data-v=blocked>Bloquer</button>':''} <button class=r data-a=mdel>Supprimer</button></div>`),'<p class=m>Aucun membre.</p>')}
+ <button data-a=mact data-v=active>${p.status=='active'?'Enregistrer':'Valider'}</button> ${p.status!='blocked'?'<button class=g data-a=mact data-v=blocked>Bloquer</button>':''} <button class=r data-a=mdel>Supprimer</button></div>`),'<p class=m>Aucun membre.</p>');imgs($('#ab'))}
 H.mact=async(v,b)=>{const c=b.closest('[data-id]'),u={status:v,role_type:c.querySelector('[data-f=role_type]').value,zone_id:c.querySelector('[data-f=zone_id]').value||null};
  if(v=='active'&&!u.zone_id)return alert('Choisissez une zone.');const{error}=await sb.from('pm_profiles').update(u).eq('id',c.dataset.id);error?alert(error.message):memList()};
 H.mdel=async(v,b)=>{if(!confirm('Supprimer définitivement ce compte ?'))return;const{error}=await sb.rpc('pm_delete_member',{uid:b.closest('[data-id]').dataset.id});error?alert(error.message):memList()};
