@@ -1,0 +1,161 @@
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>La Poste MNA</title><meta name="theme-color" content="#14284b"><link rel="manifest" href="manifest.json">
+<style>
+:root{--n:#14284b;--b:#7b1e2e;--g:#b8923a;--i:#faf6ec;--l:#ddd5c0}
+*{box-sizing:border-box}body{margin:0;font:16px/1.4 Verdana,system-ui,sans-serif;background:var(--i);color:#222;padding-bottom:70px}
+header{background:var(--n);color:#fff;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--g)}
+header a{color:#fff;margin-left:8px}.c{padding:12px;max-width:720px;margin:auto}
+.card{background:#fff;border:1px solid var(--l);border-radius:10px;padding:12px;margin:10px 0}[data-a=open],[data-a=thr]{cursor:pointer}
+input,select,textarea,button{font:inherit;width:100%;padding:10px;margin:4px 0;border:1px solid #bbb;border-radius:8px;background:#fff}
+button{background:var(--n);color:#fff;border:0;cursor:pointer;width:auto}button.s{background:#fff;color:var(--n);border:1px solid var(--n)}button.r{background:var(--b)}button.g{background:var(--g)}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--l);display:flex;padding-bottom:env(safe-area-inset-bottom)}nav button{flex:1;background:none;color:var(--n);border-radius:0;margin:0;padding:14px 4px}nav button.on{border-top:3px solid var(--b);font-weight:700}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.tabs button{background:#fff;color:var(--n);border:1px solid var(--n)}.tabs button.on{background:var(--n);color:#fff}
+.m{color:#777;font-size:13px}.tag{display:inline-block;background:var(--l);border-radius:12px;padding:1px 8px;font-size:12px}
+.msg{padding:8px 10px;border-radius:10px;margin:6px 0;border:1px solid var(--l);background:#fff}.me{background:#e8eefb;margin-left:18%}.ot{margin-right:18%}
+.ck{width:auto;margin-right:6px}
+</style></head><body>
+<header><b>✉ La Poste MNA</b><span id="who"></span></header><div class="c" id="app"></div><nav id="nav"></nav>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const sb=supabase.createClient('https://aehxiexsotqpmnmsfwgq.supabase.co','sb_publishable_4x9NR7lwOhWvvL4Um-WTAA_756gELy4');
+const $=s=>document.querySelector(s),app=$('#app'),H={};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ROLES={binome:'Évangéliste (binôme)',serviteur:'Serviteur/Servante',berger_poste:'Berger de Poste',zone_lead:'Responsable de zone',admin:'Administration'};
+const TYPES={terrain:'Rapport de terrain',cellule_hebdo:'Rapport hebdomadaire de cellule',zone:'Rapport de zone'};
+const PL={members:'Gérer les membres (valider, bloquer, supprimer)',zones:'Gérer les zones',reports:'Lire les rapports de zone',messages:'Envoyer des messages',admins:'Gérer les administrateurs'};
+const F={terrain:[['secteur','Secteur visité','t'],['foyers','Foyers visités','n'],['contacts','Personnes rencontrées','n'],['etudes','Études à domicile en cours','n'],['nouveaux','Nouveaux contacts','n'],['obs','Observations','a']],
+cellule_hebdo:[['cellule','Cellule / lieu','t'],['programme','Programme du jour','s:Formation envoyée|Rappel des Vérités'],['presents','Effectif présent','n'],['nouveaux','Nouveaux venus','n'],['conversions','Conversions','n'],['multi','Cellule multipliée cette semaine ?','s:Non|Oui'],['offrande','Offrande (scellée) : montant','t'],['obs','Observations','a']],
+zone:[['secteurs','Secteurs actifs','n'],['binomes','Binômes actifs','n'],['foyers','Foyers visités','n'],['nouveaux_t','Nouveaux contacts (terrain)','n'],['etudes','Études en cours','n'],['cellules','Cellules actives','n'],['presents','Effectif total des cellules','n'],['nouveaux_c','Nouveaux venus (cellules)','n'],['conversions','Conversions','n'],['multi','Cellules multipliées','n'],['offrandes','Offrandes (total)','t'],['obs','Observations','a']]};
+let me,zones=[],tab='rep',sub='mine',asub='mem',W,coll,P={},M=[],T=[],cur=null;
+const can=p=>me.role_type=='admin'&&(me.is_super||me.perms?.[p]);
+const myType=()=>({binome:'terrain',serviteur:'cellule_hebdo',berger_poste:'cellule_hebdo',zone_lead:'zone'})[me.role_type];
+const today=()=>new Date().toISOString().slice(0,10);
+const list=(a,e='<p class=m>Rien à afficher.</p>')=>a.length?a.join(''):e;
+const body=x=>F[x.type].map(([k,l])=>`<p><span class=m>${l}</span><br>${esc(x.data?.[k]||'—')}</p>`).join('');
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b&&H[b.dataset.a]){e.preventDefault();H[b.dataset.a](b.dataset.v,b)}});
+const loadZ=async()=>zones=(await sb.from('pm_zones').select('*').order('name')).data||[];
+
+async function boot(){const{data:{session}}=await sb.auth.getSession();if(!session)return authView();
+ me=(await sb.from('pm_profiles').select('*').eq('id',session.user.id).maybeSingle()).data;
+ if(!me){await sb.auth.signOut();return authView("Profil introuvable : inscrivez-vous d'abord.",'up')}
+ $('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';
+ if(me.status!='active')return stateView();
+ await loadZ();nav();show()}
+async function authView(msg,mode='in'){await loadZ();$('#nav').innerHTML='';$('#who').innerHTML='';
+ app.innerHTML=`<div class=card><div class=tabs><button class="${mode=='in'?'on':''}" data-a=am data-v=in>Connexion</button><button class="${mode=='up'?'on':''}" data-a=am data-v=up>Inscription</button></div><p class=m>${esc(msg||'')}</p><form id=af>
+ ${mode=='up'?`<input name=full_name placeholder="Nom complet" required><input name=phone placeholder="Téléphone / WhatsApp"><select name=role_type required><option value="">Votre fonction…</option>${['binome','serviteur','berger_poste','zone_lead'].map(r=>`<option value=${r}>${ROLES[r]}</option>`).join('')}</select><select name=zone_id><option value="">Votre zone…</option>${zones.map(z=>`<option value=${z.id}>${esc(z.name)}</option>`).join('')}</select><input name=unit placeholder="Secteur ou cellule">`:''}
+ <input name=email type=email placeholder="Adresse e-mail" required><input name=password type=password placeholder="Mot de passe (8 caractères min.)" minlength=8 required><button>${mode=='up'?"S'inscrire":'Se connecter'}</button></form></div>`;
+ $('#af').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));let r;
+  if(mode=='up'){r=await sb.auth.signUp({email:f.email,password:f.password,options:{data:{pm_signup:true,full_name:f.full_name,phone:f.phone,role_type:f.role_type,zone_id:f.zone_id,unit:f.unit}}});if(!r.error&&!r.data.session)return authView('Compte créé : connectez-vous.')}
+  else r=await sb.auth.signInWithPassword({email:f.email,password:f.password});
+  r.error?authView(r.error.message,mode):boot()}}
+function stateView(){$('#nav').innerHTML='';const bl=me.status=='blocked';
+ app.innerHTML=`<div class=card><h3>${bl?'Compte bloqué':'En attente de validation'}</h3><p>${bl?"Votre accès a été suspendu par l'administration.":"Votre inscription est bien reçue. L'administration doit la valider avant d'activer votre espace."}</p><button data-a=ref>Actualiser</button> <button class=s data-a=out>Déconnexion</button></div>`}
+function nav(){const t=[['rep','Rapports'],['msg','Messages']];if(me.role_type=='admin')t.push(['adm','Administration']);
+ $('#nav').innerHTML=t.map(([k,l])=>`<button class="${tab==k?'on':''}" data-a=tab data-v=${k}>${l}</button>`).join('')}
+const show=()=>({rep:repView,msg:msgView,adm:admView})[tab]();
+Object.assign(H,{out:()=>sb.auth.signOut(),ref:boot,am:v=>authView('',v),tab:v=>{tab=v;cur=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()}});
+
+/* ---------- Rapports ---------- */
+function repView(){const lead=me.role_type=='zone_lead',adm=me.role_type=='admin';
+ if(adm&&!can('reports'))return app.innerHTML='<div class=card>Aucun accès aux rapports.</div>';
+ const t=[];if(!adm)t.push(['mine','Mes rapports']);if(lead||adm)t.push(['rec',adm?'Rapports de zone reçus':'Reçus de ma zone']);
+ if(!t.find(x=>x[0]==sub))sub=t[0][0];
+ app.innerHTML=`<div class=tabs>${t.map(([k,l])=>`<button class="${sub==k?'on':''}" data-a=sub data-v=${k}>${l}</button>`).join('')}</div><div id=rb></div>`;
+ sub=='mine'?mineList():recList()}
+async function mineList(){const{data}=await sb.from('pm_reports').select('id,type,period_label,status').eq('author_id',me.id).order('period_start',{ascending:false});
+ $('#rb').innerHTML='<button data-a=new>+ Nouveau rapport</button>'+list((data||[]).map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>${r.status=='draft'?'Brouillon':'Envoyé'}</span></div>`),'<p class=m>Aucun rapport pour le moment.</p>')}
+H.new=()=>formView(null);
+H.open=async v=>{const{data:r}=await sb.from('pm_reports').select('*').eq('id',v).single();r.status=='draft'&&r.author_id==me.id?formView(r):detailView(r)};
+async function formView(r){const type=r?.type||myType(),d=r?.data||{};let inc=[],sel=new Set(r?.inc||[]);
+ if(type=='zone'){inc=(await sb.from('pm_reports').select('id,type,author_name,period_label').neq('type','zone').eq('status','submitted').order('period_start',{ascending:false}).limit(200)).data||[];
+  if(r?.id&&!r.inc)sel=new Set(((await sb.from('pm_report_links').select('report_id').eq('zone_report_id',r.id)).data||[]).map(x=>x.report_id))}
+ app.innerHTML=`<div class=card><h3>${TYPES[type]}</h3><form id=rf><label class=m>Date du rapport (début de la semaine)</label><input type=date name=date value=${r?.period_start||today()} required><input name=title placeholder="Titre (facultatif)" value="${esc(r?.title)}">
+ ${F[type].map(([k,l,t])=>`<label class=m>${l}</label>`+(t=='a'?`<textarea name=d_${k} rows=3>${esc(d[k])}</textarea>`:t[0]=='s'?`<select name=d_${k}>${t.slice(2).split('|').map(o=>`<option ${d[k]==o?'selected':''}>${o}</option>`).join('')}</select>`:`<input name=d_${k} type=${t=='n'?'number min=0':'text'} value="${esc(d[k])}">`)).join('')}
+ ${type=='zone'?'<h4>Rapports reçus à inclure</h4>'+list(inc.map(x=>`<label><input class=ck type=checkbox name=inc value=${x.id} ${sel.has(x.id)?'checked':''}>${TYPES[x.type]} · ${esc(x.author_name)} · ${esc(x.period_label)}</label><br>`)):''}
+ <br><button type=button class=s data-a=draft>Enregistrer le brouillon</button> <button>Vérifier avant envoi</button></form></div>`;
+ coll=()=>{const x=Object.fromEntries(new FormData($('#rf')));const data={};F[type].forEach(([k])=>data[k]=x['d_'+k]||'');return{id:r?.id,type,date:x.date,title:x.title,data,inc:[...document.querySelectorAll('[name=inc]:checked')].map(i=>i.value)}};
+ $('#rf').onsubmit=e=>{e.preventDefault();W=coll();review()}}
+H.draft=async()=>{W=coll();await persist('draft')};
+function review(){app.innerHTML=`<div class=card><h3>Vérification avant envoi</h3><p class=m>${TYPES[W.type]} · semaine du ${esc(W.date)}</p>${body(W)}${W.type=='zone'?`<p class=m>Rapports inclus : ${W.inc.length}</p>`:''}<p><b>Après l'envoi, ce rapport ne pourra plus être modifié.</b></p><button class=s data-a=edit>← Modifier</button> <button class=g data-a=send>Envoyer définitivement</button></div>`}
+H.edit=()=>formView({...W,period_start:W.date});
+H.send=()=>confirm('Envoyer définitivement ? Aucune modification possible ensuite.')&&persist('submitted');
+async function persist(status){const row={period_start:W.date,period_label:'Semaine du '+W.date,title:W.title||null,data:W.data,status:'draft'};let id=W.id,e;
+ if(id)e=(await sb.from('pm_reports').update(row).eq('id',id)).error;else{const r=await sb.from('pm_reports').insert({...row,type:W.type}).select('id').single();e=r.error;id=r.data?.id}
+ if(e)return alert(e.message);
+ if(W.type=='zone'){await sb.from('pm_report_links').delete().eq('zone_report_id',id);if(W.inc.length)await sb.from('pm_report_links').insert(W.inc.map(x=>({zone_report_id:id,report_id:x})))}
+ if(status=='submitted'){const r=await sb.from('pm_reports').update({status:'submitted'}).eq('id',id);if(r.error)return alert(r.error.message)}
+ sub='mine';repView()}
+async function detailView(r){let extra='',mk='';
+ if(r.type=='zone'){const ids=((await sb.from('pm_report_links').select('report_id').eq('zone_report_id',r.id)).data||[]).map(x=>x.report_id);
+  if(ids.length)extra='<h4>Rapports inclus</h4>'+list(((await sb.from('pm_reports').select('*').in('id',ids).order('period_start')).data||[]).map(x=>`<details class=card><summary>${TYPES[x.type]} · ${esc(x.author_name)}</summary>${body(x)}</details>`))}
+ if(r.author_id!=me.id){const m=(await sb.from('pm_report_marks').select('*').eq('report_id',r.id).eq('user_id',me.id).maybeSingle()).data||{};
+  mk=`<div class=card><b>Classement</b><input id=mf placeholder="Dossier (ex. Ngaliema, Octobre…)" value="${esc(m.folder)}"><label><input class=ck type=checkbox id=ms ${m.starred?'checked':''}>⭐ Important</label><br><button data-a=mark data-v=${r.id}>Classer</button></div>`}
+ app.innerHTML=`<button class=s data-a=tab data-v=rep>← Retour</button><div class=card><h3>${TYPES[r.type]}</h3><p class=m>${esc(r.author_name)} · ${esc(zones.find(z=>z.id==r.zone_id)?.name||'')} · ${esc(r.period_label)}<br>Envoyé le ${r.submitted_at?new Date(r.submitted_at).toLocaleDateString('fr'):'—'}</p>${body(r)}</div>${extra}${mk}`}
+H.mark=async v=>{const{error}=await sb.from('pm_report_marks').upsert({user_id:me.id,report_id:v,folder:$('#mf').value.trim()||null,starred:$('#ms').checked});alert(error?error.message:'Classé ✓')};
+async function recList(){const adm=me.role_type=='admin';
+ const[{data:rs},{data:mk}]=await Promise.all([sb.from('pm_reports').select('id,type,author_name,period_label,period_start,title').eq('status','submitted').order('period_start',{ascending:false}).limit(500),sb.from('pm_report_marks').select('*').eq('user_id',me.id)]);
+ const R=(rs||[]).filter(r=>adm?r.type=='zone':r.type!='zone'),K=Object.fromEntries((mk||[]).map(m=>[m.report_id,m])),fo=[...new Set((mk||[]).map(m=>m.folder).filter(Boolean))];
+ $('#rb').innerHTML=`<div class=card><input id=fq placeholder="🔎 Rechercher (nom, titre…)"><select id=ft><option value="">Tous les types</option>${Object.entries(TYPES).filter(([k])=>adm?k=='zone':k!='zone').map(([k,l])=>`<option value=${k}>${l}</option>`).join('')}</select><input id=fm type=month><select id=ff><option value="">Tous les dossiers</option>${fo.map(f=>`<option>${esc(f)}</option>`).join('')}</select><label><input class=ck type=checkbox id=fs>⭐ seulement</label></div><div id=rl></div>`;
+ const draw=()=>{const q=$('#fq').value.toLowerCase(),t=$('#ft').value,m=$('#fm').value,f=$('#ff').value,s=$('#fs').checked,g={};
+  R.filter(r=>(!q||(r.author_name+' '+(r.title||'')+' '+r.period_label).toLowerCase().includes(q))&&(!t||r.type==t)&&(!m||r.period_start.startsWith(m))&&(!f||K[r.id]?.folder==f)&&(!s||K[r.id]?.starred)).forEach(r=>(g[r.period_start.slice(0,7)]??=[]).push(r));
+  $('#rl').innerHTML=list(Object.entries(g).map(([mo,a])=>`<h4>${mo}</h4>`+a.map(r=>`<div class=card data-a=open data-v=${r.id}>${K[r.id]?.starred?'⭐ ':''}<b>${TYPES[r.type]}</b><br>${esc(r.author_name)} <span class=m>· ${esc(r.period_label)}</span>${K[r.id]?.folder?` <span class=tag>${esc(K[r.id].folder)}</span>`:''}</div>`).join('')),'<p class=m>Aucun rapport reçu.</p>')};
+ ['fq','ft','fm','ff','fs'].forEach(i=>$('#'+i).oninput=draw);draw()}
+
+/* ---------- Messages ---------- */
+async function msgView(){cur=null;const adm=me.role_type=='admin',lead=me.role_type=='zone_lead';
+ const[{data:ps},{data:ms}]=await Promise.all([sb.from('pm_profiles').select('id,full_name,role_type,zone_id').eq('status','active'),sb.from('pm_messages').select('*').order('created_at')]);
+ P=Object.fromEntries((ps||[]).map(p=>[p.id,p]));M=ms||[];
+ const ok=p=>p.id!=me.id&&(adm||(lead?(p.role_type=='admin'||p.zone_id==me.zone_id):(p.role_type=='zone_lead'&&p.zone_id==me.zone_id)));
+ const nm=p=>p.full_name+' · '+ROLES[p.role_type];
+ T=Object.values(P).filter(ok).map(p=>({k:p.id,n:nm(p)}));
+ M.forEach(m=>{const o=m.sender_id==me.id?m.recipient_id:m.sender_id;if(o&&P[o]&&!T.find(t=>t.k==o))T.push({k:o,n:nm(P[o]),ro:1})});
+ if(adm&&can('messages')){const al=me.is_super||!me.scope_zones;if(al)T.unshift({k:'bc:all',n:'📢 Tous les responsables'});zones.filter(z=>al||me.scope_zones.includes(z.id)).forEach(z=>T.push({k:'bc:'+z.id,n:'📢 Zone '+z.name}))}
+ if(lead)T.unshift({k:'bc:'+me.zone_id,n:'📢 Toute ma zone'});
+ if(M.some(m=>!m.recipient_id&&m.sender_id!=me.id))T.unshift({k:'ann',n:'📢 Annonces',ro:1});
+ if(adm&&!can('messages'))T.forEach(t=>t.ro=1);
+ app.innerHTML=list(T.map(t=>{const l=thread(t.k).slice(-1)[0];return`<div class=card data-a=thr data-v=${t.k}><b>${esc(t.n)}</b><br><span class=m>${l?esc((l.body||'📎 '+l.file_name).slice(0,60)):'Aucun message'}</span></div>`}),'<div class=card>Aucun contact disponible : votre zone ou votre responsable n’est pas encore défini.</div>')}
+const thread=k=>M.filter(m=>k=='ann'?(!m.recipient_id&&m.sender_id!=me.id):k.startsWith('bc:')?(m.sender_id==me.id&&(k=='bc:all'?m.audience=='all':m.audience=='zone'&&m.zone_id==k.slice(3))):((m.sender_id==me.id&&m.recipient_id==k)||(m.sender_id==k&&m.recipient_id==me.id)));
+H.thr=v=>convView(v);H.back=()=>msgView();
+function convView(k){cur=k;const t=T.find(x=>x.k==k);
+ app.innerHTML=`<button class=s data-a=back>← Retour</button><h3>${esc(t.n)}</h3><div id=ml></div>${t.ro?'<p class=m>Lecture seule : vous ne pouvez pas répondre ici.</p>':`<form id=cf><textarea name=t rows=2 placeholder="Votre message…"></textarea><input type=file name=f accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"><button>Envoyer</button></form>`}`;
+ if(!t.ro)$('#cf').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),file=f.get('f');await send(k,f.get('t').trim(),file&&file.size?file:null);e.target.reset()};
+ drawMsgs()}
+function drawMsgs(){const el=$('#ml');if(!el)return;
+ el.innerHTML=list(thread(cur).map(m=>`<div class="msg ${m.sender_id==me.id?'me':'ot'}"><span class=m>${esc(P[m.sender_id]?.full_name||'')} · ${new Date(m.created_at).toLocaleString('fr')}</span><br>${esc(m.body||'')}${m.file_path?(m.file_kind=='image'?`<br><img data-p="${esc(m.file_path)}" style="max-width:100%;border-radius:8px">`:`<br><a href=# data-a=dl data-v="${esc(m.file_path)}">📎 ${esc(m.file_name)}</a>`):''}</div>`),'<p class=m>Aucun message.</p>');
+ el.querySelectorAll('img[data-p]').forEach(async i=>{const{data}=await sb.storage.from('pm-files').createSignedUrl(i.dataset.p,3600);if(data)i.src=data.signedUrl})}
+H.dl=async v=>{const{data}=await sb.storage.from('pm-files').createSignedUrl(v,300);if(data)window.open(data.signedUrl)};
+async function send(k,text,file){if(!text&&!file)return;let att={};
+ if(file){const path=`${me.id}/${Date.now()}_${file.name.replace(/[^\w.\-]/g,'_')}`;const u=await sb.storage.from('pm-files').upload(path,file);if(u.error)return alert('Fichier refusé : '+u.error.message);att={file_path:path,file_name:file.name,file_kind:file.type.startsWith('image/')?'image':'document'}}
+ const to=k=='bc:all'?{audience:'all'}:k.startsWith('bc:')?{audience:'zone',zone_id:k.slice(3)}:{recipient_id:k};
+ const r=await sb.from('pm_messages').insert({sender_id:me.id,body:text||null,...att,...to});if(r.error)return alert('Envoi refusé : '+r.error.message);
+ M=(await sb.from('pm_messages').select('*').order('created_at')).data||M;drawMsgs()}
+setInterval(async()=>{if(tab=='msg'&&cur){const{data}=await sb.from('pm_messages').select('*').order('created_at');if(data&&data.length!=M.length){M=data;drawMsgs()}}},15000);
+
+/* ---------- Administration ---------- */
+function admView(){const t=[['mem','Membres',can('members')],['adm','Administrateurs',can('admins')],['zon','Zones',can('zones')]].filter(x=>x[2]);
+ if(!t.length)return app.innerHTML='<div class=card>Aucun droit d’administration attribué pour le moment.</div>';
+ if(!t.find(x=>x[0]==asub))asub=t[0][0];
+ app.innerHTML=`<div class=tabs>${t.map(([k,l])=>`<button class="${asub==k?'on':''}" data-a=asub data-v=${k}>${l}</button>`).join('')}</div><div id=ab></div>`;
+ ({mem:memList,adm:admList,zon:zonList})[asub]()}
+async function memList(){const o={pending:0,active:1,blocked:2},d=((await sb.from('pm_profiles').select('*').neq('role_type','admin')).data||[]).sort((a,b)=>o[a.status]-o[b.status]);
+ $('#ab').innerHTML=list(d.map(p=>`<div class=card data-id=${p.id}><b>${esc(p.full_name)}</b> <span class=tag>${{pending:'En attente',active:'Actif',blocked:'Bloqué'}[p.status]}</span><br><span class=m>${esc(p.email)} · ${esc(p.phone||'')} · ${esc(p.unit||'')}</span>
+ <select data-f=role_type>${['binome','serviteur','berger_poste','zone_lead'].map(r=>`<option value=${r} ${p.role_type==r?'selected':''}>${ROLES[r]}</option>`).join('')}</select>
+ <select data-f=zone_id><option value="">— zone —</option>${zones.map(z=>`<option value=${z.id} ${p.zone_id==z.id?'selected':''}>${esc(z.name)}</option>`).join('')}</select>
+ <button data-a=mact data-v=active>${p.status=='active'?'Enregistrer':'Valider'}</button> ${p.status!='blocked'?'<button class=g data-a=mact data-v=blocked>Bloquer</button>':''} <button class=r data-a=mdel>Supprimer</button></div>`),'<p class=m>Aucun membre.</p>')}
+H.mact=async(v,b)=>{const c=b.closest('[data-id]'),u={status:v,role_type:c.querySelector('[data-f=role_type]').value,zone_id:c.querySelector('[data-f=zone_id]').value||null};
+ if(v=='active'&&!u.zone_id)return alert('Choisissez une zone.');const{error}=await sb.from('pm_profiles').update(u).eq('id',c.dataset.id);error?alert(error.message):memList()};
+H.mdel=async(v,b)=>{if(!confirm('Supprimer définitivement ce compte ?'))return;const{error}=await sb.rpc('pm_delete_member',{uid:b.closest('[data-id]').dataset.id});error?alert(error.message):memList()};
+async function admList(){const d=(await sb.from('pm_profiles').select('*').order('full_name')).data||[],ad=d.filter(p=>p.role_type=='admin'),cd=d.filter(p=>p.role_type!='admin'&&p.status=='active');
+ $('#ab').innerHTML=`<div class=card><b>Nommer un administrateur</b><select id=nc>${cd.map(p=>`<option value=${p.id}>${esc(p.full_name)} · ${esc(p.email)}</option>`).join('')}</select><button data-a=nadm>Nommer</button><p class=m>La personne doit d'abord s'être inscrite et avoir été validée comme membre. Vous réglez ensuite ses accès.</p></div>`+
+ ad.map(p=>`<div class=card data-id=${p.id}><b>${esc(p.full_name)}</b> ${p.is_super?'<span class=tag>Compte principal</span>':''}<br><span class=m>${esc(p.email)}</span>${p.is_super?'<p class=m>Tous les accès.</p>':`<p>${Object.entries(PL).map(([k,l])=>`<label><input class=ck type=checkbox data-p=${k} ${p.perms?.[k]?'checked':''}>${l}</label><br>`).join('')}</p><p class=m>Zones accessibles (aucune cochée = toutes) :</p>${zones.map(z=>`<label><input class=ck type=checkbox data-z=${z.id} ${p.scope_zones?.includes(z.id)?'checked':''}>${esc(z.name)}</label><br>`).join('')}<br><button data-a=aSave>Enregistrer</button> <button class=r data-a=aOff>Retirer les droits</button>`}</div>`).join('')}
+H.nadm=async()=>{const id=$('#nc').value;if(!id)return;const{error}=await sb.from('pm_profiles').update({role_type:'admin',status:'active',perms:{}}).eq('id',id);error?alert(error.message):admList()};
+H.aSave=async(v,b)=>{const c=b.closest('[data-id]'),perms={};c.querySelectorAll('[data-p]').forEach(i=>perms[i.dataset.p]=i.checked);const z=[...c.querySelectorAll('[data-z]:checked')].map(i=>i.dataset.z);
+ const{error}=await sb.from('pm_profiles').update({perms,scope_zones:z.length?z:null}).eq('id',c.dataset.id);alert(error?error.message:'Accès enregistrés ✓')};
+H.aOff=async(v,b)=>{if(!confirm('Retirer les droits d\'administration ?'))return;const{error}=await sb.from('pm_profiles').update({role_type:'serviteur',perms:{},scope_zones:null}).eq('id',b.closest('[data-id]').dataset.id);error?alert(error.message):admList()};
+function zonList(){$('#ab').innerHTML=`<div class=card><form id=zf><input name=n placeholder="Nom de la nouvelle zone" required><button>Ajouter</button></form></div>`+zones.map(z=>`<div class=card data-id=${z.id}><input value="${esc(z.name)}"><button data-a=zren>Renommer</button> <button class=r data-a=zdel>Supprimer</button></div>`).join('');
+ $('#zf').onsubmit=async e=>{e.preventDefault();const{error}=await sb.from('pm_zones').insert({name:new FormData(e.target).get('n').trim()});error?alert(error.message):rz()}}
+const rz=async()=>{await loadZ();zonList()};
+H.zren=async(v,b)=>{const c=b.closest('[data-id]'),{error}=await sb.from('pm_zones').update({name:c.querySelector('input').value.trim()}).eq('id',c.dataset.id);error?alert(error.message):rz()};
+H.zdel=async(v,b)=>{if(!confirm('Supprimer cette zone ?'))return;const{error}=await sb.from('pm_zones').delete().eq('id',b.closest('[data-id]').dataset.id);error?alert('Suppression impossible : '+error.message):rz()};
+sb.auth.onAuthStateChange(ev=>{if(ev=='SIGNED_OUT'){me=null;boot()}});boot();
+</script></body></html>
