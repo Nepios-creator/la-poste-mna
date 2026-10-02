@@ -47,8 +47,10 @@ const list=(a,e='<p class=m>Rien à afficher.</p>')=>a.length?a.join(''):e;
 const body=x=>F[x.type].map(([k,l])=>`<p><span class=m>${l}</span><br>${esc(x.data?.[k]||'—')}</p>`).join('');
 const sign=async(p,dl)=>(await sb.storage.from('pm-files').createSignedUrl(p,3600,dl?{download:dl}:undefined)).data?.signedUrl;
 const imgs=el=>el.querySelectorAll('img[data-p]').forEach(async i=>{const u=await sign(i.dataset.p);if(u)i.src=u});
-const shrink=(f,max)=>new Promise(r=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);c.toBlob(r,'image/jpeg',.8)};i.src=URL.createObjectURL(f)});
-const upl=async(f,n)=>{const path=`${me.id}/${Date.now()}_${n.replace(/[^\w.\-]/g,'_')}`;const{error}=await sb.storage.from('pm-files').upload(path,f,{contentType:f.type||'application/octet-stream'});if(error){alert('Fichier refusé : '+error.message);return null}return path};
+const shrink=(f,max)=>new Promise((res,rej)=>{const i=new Image(),fb=()=>/^image\/(jpeg|png|webp)$/.test(f.type)&&f.size<=20e6?res(f):rej(new Error("Cette photo n'a pas pu être lue. Choisissez une photo JPEG ou PNG (pas HEIC)."));
+ i.onerror=fb;i.onload=()=>{try{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(i.width*k));c.height=Math.max(1,Math.round(i.height*k));c.getContext('2d').drawImage(i,0,0,c.width,c.height);c.toBlob(x=>x?res(x):fb(),'image/jpeg',.8)}catch{fb()}};i.src=URL.createObjectURL(f);setTimeout(fb,15000)});
+addEventListener('unhandledrejection',e=>alert('Une erreur est survenue : '+(e.reason?.message||e.reason)));
+const upl=async(f,n)=>{if(!f){alert('Fichier illisible.');return null}const path=`${me.id}/${Date.now()}_${n.replace(/[^\w.\-]/g,'_')}`;const{error}=await sb.storage.from('pm-files').upload(path,f,{contentType:f.type||'application/octet-stream'});if(error){alert('Fichier refusé : '+error.message);return null}return path};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b&&H[b.dataset.a]){e.preventDefault();H[b.dataset.a](b.dataset.v,b)}});
 const loadZ=async()=>zones=(await sb.from('pm_zones').select('*').order('name')).data||[];
 
@@ -88,32 +90,65 @@ H.inv=async()=>{const t="Installe La Poste MNA, l'application des Églises de la
 Object.assign(H,{out:async()=>{await dropPush();sb.auth.signOut()},ref:boot,am:v=>authView('',v),tab:v=>{tab=v;pv='';cur=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()},pl:v=>{pv=v;plusView()}});
 
 /* ---------- Identité et photo ---------- */
-function idView(first){const p=me,o=(a,v)=>Object.entries(a).map(([k,l])=>`<option value=${k} ${v==k?'selected':''}>${l}</option>`).join('');
- const t=(n,ph)=>`<input name=${n} placeholder="${ph}" value="${esc(p[n])}" required>`;$('#nav').innerHTML=first?'':$('#nav').innerHTML;
- hs().innerHTML=`<div class=card><h3>${first?'Complétez votre identité':'Mon profil'}</h3>${first?'<p class=m>Avant de continuer, ajoutez votre photo de profil et remplissez ce formulaire complet.</p>':''}<form id=idf>
- <img id=pp class=ph ${p.photo_path?`data-p="${esc(p.photo_path)}"`:''}><input type=file id=pf accept="image/*" ${p.photo_path?'':'required'}><p class=m style="text-align:center">Photo de profil</p>
+const LB={nom:'Nom',postnom:'Post-nom',prenom:'Prénom',birth_date:'Date de naissance',birth_place:'Lieu de naissance',ebk:"Participation à l'EBK",ebk_session:'Session EBK',sexe:'Sexe',etat_civil:'État civil',adr_pays:'Pays',adr_ville:'Ville',adr_commune:'Commune',adr_quartier:'Quartier',adr_avenue:'Avenue',adr_numero:'Numéro',phone:'Téléphone',minister_type:"Statut dans l'église",ordination_year:"Année d'ordination",ministry:'Ministère',ordination_where:'Ordination',photo_path:'Photo de profil'};
+const EC={celibataire:'Célibataire',marie:'Marié(e)',veuf:'Veuf / Veuve',divorce:'Divorcé(e)'},MT={ministre:'Ministre ordonné',serviteur:'Serviteur établi',membre:"Membre de l'église"},OW={mna:'Au sein du ministère',dehors:'En dehors du ministère'};
+const fv=(k,v)=>v===null||v===undefined||v===''?'—':k=='ebk'?(v?'Oui':'Non'):k=='sexe'?(v=='M'?'Masculin':'Féminin'):k=='etat_civil'?EC[v]:k=='minister_type'?MT[v]:k=='ministry'?MIN[v]:k=='ordination_where'?OW[v]:k=='photo_path'?'(photo)':String(v);
+const IDK=Object.keys(LB);let IDV=null,IDF=null,IDP=null;
+const shown=(k,p)=>k!='photo_path'&&!(p.is_super&&['ebk','ebk_session','ordination_where'].includes(k))&&!(k=='ebk_session'&&!p.ebk)&&!(['ordination_year','ministry','ordination_where'].includes(k)&&p.minister_type!='ministre');
+const idFull=p=>`<img class=ph data-p="${esc(p.photo_path||'')}" ${p.photo_path?'':'hidden'}>`+IDK.filter(k=>shown(k,p)).map(k=>`<div class=m>${LB[k]} : <b style="color:#222">${esc(fv(k,p[k]))}</b></div>`).join('');
+const idHtml=p=>`<details><summary class=m>Identité complète</summary>${idFull(p)}</details>`;
+const idView=first=>first?idForm(true):profView();
+async function profView(){const rq=(await sb.from('pm_identity_requests').select('*').eq('user_id',me.id).order('created_at',{ascending:false}).limit(5)).data||[],pend=rq.find(r=>r.status=='pending');
+ hs().innerHTML=`<div class=card><h3>Mon profil</h3><p><b>${esc(me.full_name)}</b> <span class=tag>${ROLES[me.role_type]}${me.extra_role?' + '+ROLES[me.extra_role]:''}</span></p>${idFull(me)}${me.is_super?'':"<p class=m>Pour modifier ces informations, une demande doit être validée par l'administration.</p>"}${pend?`<div class=ins>⏳ Demande de modification en attente de validation (${fd(pend.created_at)}).</div><button class=s data-a=rqx data-v=${pend.id}>Annuler la demande</button>`:`<button data-a=idedit>✏ ${me.is_super?'Modifier':'Demander une modification'}</button>`}</div>`+list(rq.filter(r=>r.status!='pending').slice(0,3).map(r=>`<div class=card><span class=tag>${r.status=='approved'?'✅ Acceptée':'❌ Refusée'}</span> <span class=m>${fd(r.decided_at||r.created_at)}</span>${r.note?`<br><span class=m>${esc(r.note)}</span>`:''}</div>`),'');imgs(hs())}
+H.idedit=()=>{IDV=IDF=null;idForm(false)};
+H.rqx=async v=>{if(confirm('Annuler cette demande ?')){await sb.from('pm_identity_requests').delete().eq('id',v);profView()}};
+function idForm(first){const p={...me,...(IDV||{})},o=(a,v)=>Object.entries(a).map(([k,l])=>`<option value=${k} ${v==k?'selected':''}>${l}</option>`).join('');
+ const t=(n,ph)=>`<input name=${n} placeholder="${ph}" value="${esc(p[n])}" required>`;if(first)$('#nav').innerHTML='';
+ hs().innerHTML=`<div class=card><h3>${first?'Complétez votre identité':'Modifier mes informations'}</h3>${first?'<p class=m>Avant de continuer, ajoutez votre photo de profil et remplissez ce formulaire complet. Vous pourrez tout vérifier avant de l\'enregistrer.</p>':"<p class=m>Vos modifications seront envoyées à l'administration pour validation.</p>"}<form id=idf>
+ <img id=pp class=ph ${IDF?'':p.photo_path?`data-p="${esc(p.photo_path)}"`:''}><input type=file id=pf accept="image/*" ${p.photo_path||IDF?'':'required'}><p class=m style="text-align:center">Photo de profil</p>
  ${t('nom','Nom')}${t('postnom','Post-nom')}${t('prenom','Prénom')}
  <label class=m>Date de naissance</label><input type=date name=birth_date value="${p.birth_date||''}" required>${t('birth_place','Lieu de naissance')}
- ${p.is_super?'':`<label class=m>Avez-vous participé à l'EBK ?</label><div><label><input class=ck type=radio name=ebk value=oui ${p.ebk===true?'checked':''} required>Oui</label> <label><input class=ck type=radio name=ebk value=non ${p.ebk===false?'checked':''} required>Non</label></div>
+ ${me.is_super?'':`<label class=m>Avez-vous participé à l'EBK ?</label><div><label><input class=ck type=radio name=ebk value=oui ${p.ebk===true?'checked':''} required>Oui</label> <label><input class=ck type=radio name=ebk value=non ${p.ebk===false?'checked':''} required>Non</label></div>
  <div id=g1 class=hid><input name=ebk_session placeholder="Session suivie" value="${esc(p.ebk_session)}"></div>`}
  <select name=sexe required><option value="">Sexe…</option>${o({M:'Masculin',F:'Féminin'},p.sexe)}</select>
- <select name=etat_civil required><option value="">État civil…</option>${o({celibataire:'Célibataire',marie:'Marié(e)',veuf:'Veuf / Veuve',divorce:'Divorcé(e)'},p.etat_civil)}</select>
+ <select name=etat_civil required><option value="">État civil…</option>${o(EC,p.etat_civil)}</select>
  <h4>Adresse de domicile</h4>${t('adr_pays','Pays')}${t('adr_ville','Ville')}${t('adr_commune','Commune')}${t('adr_quartier','Quartier')}${t('adr_avenue','Avenue')}${t('adr_numero','Numéro')}
  <input name=phone type=tel placeholder="Numéro de téléphone" value="${esc(p.phone)}" required>
- <select name=minister_type required><option value="">Votre statut dans l'église…</option>${o({ministre:'Ministre ordonné',serviteur:'Serviteur établi',membre:"Membre de l'église"},p.minister_type)}</select>
- <div id=g2 class=hid><input type=number name=ordination_year placeholder="Année d'ordination" min=1950 max=2100 value="${p.ordination_year||''}"><select name=ministry><option value="">Ministère…</option>${o(MIN,p.ministry)}</select>${p.is_super?'':`<select name=ordination_where>${o({mna:'Ordonné au sein du ministère',dehors:'Ordonné en dehors du ministère'},p.ordination_where)}</select>`}</div>
- <button>Enregistrer</button> ${first?'':'<button type=button class=s data-a=pl data-v="">Annuler</button>'}</form></div>`;
+ <select name=minister_type required><option value="">Votre statut dans l'église…</option>${o(MT,p.minister_type)}</select>
+ <div id=g2 class=hid><input type=number name=ordination_year placeholder="Année d'ordination" min=1950 max=2100 value="${p.ordination_year||''}"><select name=ministry><option value="">Ministère…</option>${o(MIN,p.ministry)}</select>${me.is_super?'':`<select name=ordination_where>${o({mna:'Ordonné au sein du ministère',dehors:'Ordonné en dehors du ministère'},p.ordination_where)}</select>`}</div>
+ <button>Vérifier</button> ${first?'':'<button type=button class=s data-a=pl data-v=prof>Annuler</button>'}</form></div>`;
  const tg=()=>{const y=$('[name=ebk]:checked')?.value=='oui',m=$('[name=minister_type]').value=='ministre';[['g1',y],['g2',m]].forEach(([id,on])=>{const g=$('#'+id);if(!g)return;g.classList.toggle('hid',!on);g.querySelectorAll('input,select').forEach(i=>{i.disabled=!on;i.required=on})})};
- $('#idf').onchange=tg;tg();imgs(app);
+ $('#idf').onchange=tg;tg();imgs(hs());if(IDF)$('#pp').src=URL.createObjectURL(IDF);
  $('#pf').onchange=()=>{const f=$('#pf').files[0];if(f)$('#pp').src=URL.createObjectURL(f)};
- $('#idf').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;const f=Object.fromEntries(new FormData(e.target)),file=$('#pf').files[0];let photo=me.photo_path;
-  if(file){photo=await upl(await shrink(file,800),'photo.jpg');if(!photo){b.disabled=false;return}}
-  const mn=f.minister_type=='ministre',u={photo_path:photo,nom:f.nom.trim(),postnom:f.postnom.trim(),prenom:f.prenom.trim(),birth_date:f.birth_date,birth_place:f.birth_place.trim(),ebk:p.is_super?null:f.ebk=='oui',ebk_session:f.ebk=='oui'?f.ebk_session:null,sexe:f.sexe,etat_civil:f.etat_civil,
-   adr_pays:f.adr_pays,adr_ville:f.adr_ville,adr_commune:f.adr_commune,adr_quartier:f.adr_quartier,adr_avenue:f.adr_avenue,adr_numero:f.adr_numero,phone:f.phone,minister_type:f.minister_type,
-   ordination_year:mn?+f.ordination_year:null,ministry:mn?f.ministry:null,ordination_where:mn&&!p.is_super?f.ordination_where:null,identity_done:true,full_name:[f.prenom,f.nom,f.postnom].join(' ').trim()};
-  const{error}=await sb.from('pm_profiles').update(u).eq('id',me.id);if(error){b.disabled=false;return alert(error.message)}
-  Object.assign(me,u);$('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';first?enter():H.pl('')}}
-const idHtml=p=>`<details><summary class=m>Identité complète</summary><img class=ph data-p="${esc(p.photo_path||'')}" ${p.photo_path?'':'hidden'}><p class=m>${esc([p.nom,p.postnom,p.prenom].join(' '))}<br>Né(e) le ${esc(p.birth_date||'—')} à ${esc(p.birth_place||'—')}<br>${p.sexe=='M'?'Masculin':p.sexe=='F'?'Féminin':'—'} · ${esc(p.etat_civil||'—')}<br>${esc([p.adr_numero,p.adr_avenue,p.adr_quartier,p.adr_commune,p.adr_ville,p.adr_pays].filter(Boolean).join(', ')||'—')}<br>Tél : ${esc(p.phone||'—')}<br>EBK : ${p.ebk?'Oui · '+esc(p.ebk_session||''):p.ebk===false?'Non':'—'}<br>${p.minister_type=='ministre'?`Ministre ordonné : ${MIN[p.ministry]||''}, ${p.ordination_year||''}, ${p.ordination_where=='mna'?'au sein du ministère':p.ordination_where=='dehors'?'en dehors du ministère':''}`:p.minister_type=='serviteur'?'Serviteur établi':p.minister_type=='membre'?"Membre de l'église":'—'}</p></details>`;
+ $('#idf').onsubmit=e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target)),file=$('#pf').files[0]||IDF,mn=f.minister_type=='ministre',n=k=>(f[k]||'').trim()||null;IDF=file||null;
+  const u={nom:n('nom'),postnom:n('postnom'),prenom:n('prenom'),birth_date:f.birth_date,birth_place:n('birth_place'),ebk:me.is_super?null:f.ebk=='oui',ebk_session:f.ebk=='oui'?n('ebk_session'):null,sexe:f.sexe,etat_civil:f.etat_civil,adr_pays:n('adr_pays'),adr_ville:n('adr_ville'),adr_commune:n('adr_commune'),adr_quartier:n('adr_quartier'),adr_avenue:n('adr_avenue'),adr_numero:n('adr_numero'),phone:n('phone'),minister_type:f.minister_type,ordination_year:mn&&f.ordination_year?+f.ordination_year:null,ministry:mn?f.ministry||null:null,ordination_where:mn&&!me.is_super?f.ordination_where||null:null};
+  IDV=u;
+  if(first)return idReview(u,file,true,true);
+  const ch={};IDK.filter(k=>k!='photo_path').forEach(k=>{if((me[k]??null)!==(u[k]??null))ch[k]=u[k]??null});if(file&&file!==me._f)ch.photo_path='__new__';
+  if(!Object.keys(ch).length)return alert('Aucune modification détectée.');idReview(ch,file,me.is_super,false)}}
+function idReview(ch,file,direct,first){IDP={ch,file,direct,first};
+ const rows=Object.entries(ch).filter(([k,v])=>k!='photo_path'&&(!first||v!==null)).map(([k,v])=>first?`<div class=m>${LB[k]} : <b style="color:#222">${esc(fv(k,v))}</b></div>`:`<div class=m>${LB[k]} :<br>${esc(fv(k,me[k]))} → <b style="color:#222">${esc(fv(k,v))}</b></div>`).join('');
+ hs().innerHTML=`<div class=card><h3>Vérifiez avant d'enregistrer</h3>${file?`<img class=ph src="${URL.createObjectURL(file)}"><p class=m style="text-align:center">${first?'Photo de profil':'Nouvelle photo'}</p>`:''}${rows}
+ <div class=ins>⚠ ${direct&&!me.is_super?"Après l'enregistrement, vous ne pourrez plus modifier ces informations sans la validation de l'administration. Relisez chaque ligne.":direct?'Ces modifications seront appliquées immédiatement.':"Ces modifications ne seront appliquées qu'après validation de l'administration."}</div>
+ ${direct?'':'<textarea id=rs rows=2 placeholder="Motif de la modification (obligatoire)"></textarea>'}<label><input class=ck type=checkbox id=ok>Je certifie que ces informations sont exactes.</label><br><button class=s data-a=idback>← Corriger</button> <button class=g data-a=idgo>${direct?'Enregistrer':'Envoyer la demande'}</button></div>`}
+H.idback=()=>idForm(IDP.first);
+H.idgo=async(v,b)=>{try{await idGo(v,b)}catch(e){b.disabled=false;b.textContent='Réessayer';alert('Enregistrement impossible : '+(e.message||e))}};
+async function idGo(v,b){if(!$('#ok').checked)return alert('Cochez la case pour certifier que les informations sont exactes.');const{ch,file,direct,first}=IDP;let reason=null;
+ if(!direct){reason=$('#rs').value.trim();if(!reason)return alert('Indiquez le motif de la modification.')}
+ b.disabled=true;b.textContent='Enregistrement…';const c={...ch};delete c.photo_path;
+ if(file&&(first||ch.photo_path)){const path=await upl(await shrink(file,800),'photo.jpg');if(!path){b.disabled=false;return}c.photo_path=path}
+ if(['nom','postnom','prenom'].some(k=>k in c)){const g=k=>k in c?c[k]:me[k];c.full_name=[g('prenom'),g('nom'),g('postnom')].filter(Boolean).join(' ')}
+ if(direct){const{error}=await sb.from('pm_profiles').update({...c,identity_done:true}).eq('id',me.id);if(error){b.disabled=false;return alert(error.message)}
+  Object.assign(me,c,{identity_done:true});$('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';IDV=IDF=IDP=null;first?enter():H.pl('prof')}
+ else{const{error}=await sb.from('pm_identity_requests').insert({changes:c,reason,user_id:me.id});if(error){b.disabled=false;return alert(error.message.includes('pm_idreq_one_pending')?'Une demande est déjà en attente.':error.message)}
+  IDV=IDF=IDP=null;alert("Demande envoyée à l'administration ✓");H.pl('prof')}}
+async function dirView(){const d=((await sb.from('pm_profiles').select('*').order('full_name')).data||[]).filter(p=>p.identity_done);
+ hs().innerHTML='<h3>Identités des membres</h3><input id=dq placeholder="🔎 Rechercher un nom…"><div id=dl></div>';
+ const draw=()=>{const q=$('#dq').value.toLowerCase();$('#dl').innerHTML=list(d.filter(p=>!q||p.full_name.toLowerCase().includes(q)).map(p=>`<div class=card><b>${esc(p.full_name)}</b> <span class=tag>${ROLES[p.role_type]}${p.extra_role?' + '+ROLES[p.extra_role]:''}</span> <span class=m>${esc(zn(p.zone_id))}</span>${idFull(p)}</div>`),'<p class=m>Aucune identité remplie pour le moment.</p>');imgs($('#dl'))};$('#dq').oninput=draw;draw()}
+async function reqList(){const d=(await sb.from('pm_identity_requests').select('*').order('created_at',{ascending:false}).limit(40)).data||[];
+ $('#ab').innerHTML=list(d.map(r=>`<div class=card data-id=${r.id}><b>${esc(r.user_name)}</b> <span class=tag>${{pending:'En attente',approved:'Acceptée',rejected:'Refusée'}[r.status]}</span> <span class=m>${fd(r.created_at)}</span>${r.reason?`<p class=m>Motif : ${esc(r.reason)}</p>`:''}${Object.entries(r.changes).filter(([k])=>!['photo_path','full_name'].includes(k)).map(([k,v])=>`<div class=m>${LB[k]} : ${esc(fv(k,r.old_values?.[k]))} → <b style="color:#222">${esc(fv(k,v))}</b></div>`).join('')}${r.changes.photo_path?`<div class=m>Nouvelle photo :</div><img class=ph data-p="${esc(r.changes.photo_path)}">`:''}${r.status=='pending'?'<button data-a=rok>Approuver</button> <button class=r data-a=rno>Refuser</button>':r.note?`<p class=m>${esc(r.note)}</p>`:''}</div>`),'<p class=m>Aucune demande de modification.</p>');imgs($('#ab'))}
+H.rok=async(v,b)=>{const{error}=await sb.rpc('pm_decide_identity',{p_id:b.closest('[data-id]').dataset.id,p_ok:true,p_note:null});error?alert(error.message):reqList()};
+H.rno=async(v,b)=>{const n=prompt('Motif du refus (facultatif) :');if(n===null)return;const{error}=await sb.rpc('pm_decide_identity',{p_id:b.closest('[data-id]').dataset.id,p_ok:false,p_note:n||null});error?alert(error.message):reqList()};
 
 /* ---------- Communiqués ---------- */
 async function loadInfo(){const[a,b,c,d]=await Promise.all([sb.from('pm_posts').select('*').order('created_at',{ascending:false}),sb.from('pm_post_views').select('post_id').eq('user_id',me.id),sb.from('pm_shares').select('*').order('created_at',{ascending:false}),sb.from('pm_share_events').select('share_id').eq('user_id',me.id)]);
@@ -227,9 +262,9 @@ async function send(k,text,file){if(!text&&!file)return;let att={};
 setInterval(async()=>{if(tab=='msg'&&cur){const{data}=await sb.from('pm_messages').select('*').order('created_at');if(data&&data.length!=M.length){M=data;drawMsgs()}}},15000);
 
 /* ---------- Plus : profil, programmes, administration ---------- */
-function plusView(){if(!pv){const it=[['prof','👤 Mon profil'],...(has('binome')||has('berger_poste')?[['sched','🗓 Mon programme fixe']]:[]),...(me.role_type=='zone_lead'||can('reports')?[['all','🗓 Programmes de la zone']]:[]),...(me.role_type=='admin'?[['adm','⚙ Administration']]:[])];
+function plusView(){if(!pv){const it=[['prof','👤 Mon profil'],...(has('binome')||has('berger_poste')?[['sched','🗓 Mon programme fixe']]:[]),...(me.role_type=='zone_lead'||can('reports')?[['all','🗓 Programmes de la zone']]:[]),...(me.role_type=='zone_lead'||me.role_type=='admin'?[['dir','👥 Identités des membres']]:[]),...(me.role_type=='admin'?[['adm','⚙ Administration']]:[])];
   return app.innerHTML=pushCard()+it.map(([k,l])=>`<div class=card data-a=pl data-v=${k}><b>${l}</b></div>`).join('')+inst()+'<div class=card data-a=out><b>⎋ Déconnexion</b></div>'}
- app.innerHTML='<button class=s data-a=pl data-v="">← Menu</button><div id=pb></div>';({prof:()=>idView(false),sched:schedView,all:schedAll,adm:admView})[pv]()}
+ app.innerHTML='<button class=s data-a=pl data-v="">← Menu</button><div id=pb></div>';({prof:profView,sched:schedView,all:schedAll,dir:dirView,adm:admView})[pv]()}
 const DJ=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 async function schedView(){const ks=['binome','berger_poste'].filter(has).map(r=>KT[r]),{data}=await sb.from('pm_schedules').select('*').eq('user_id',me.id).order('created_at');
  hs().innerHTML=ks.map(([k,l])=>`<div class=card><h3>Mon programme fixe ${l}</h3>`+list((data||[]).filter(s=>s.kind==k).map(s=>`<div class=card>${esc(s.days.join(', '))} · ${esc(s.heure)}<br><span class=m>Avec : ${esc(s.compagnon||'—')}</span><br><button class=r data-a=scdel data-v=${s.id}>Supprimer</button></div>`),'<p class=m>Aucun programme enregistré.</p>')+`<form data-k=${k}><b>Ajouter un créneau</b><br>${DJ.map(d=>`<label><input class=ck type=checkbox name=d value=${d}>${d}</label><br>`).join('')}<label class=m>Heure</label><input type=time name=h required><input name=c placeholder="Compagnon (nom)" required><button>Ajouter</button></form></div>`).join('');
@@ -240,11 +275,11 @@ async function schedAll(){const d=(await sb.from('pm_schedules').select('*').ord
  hs().innerHTML='<h3>Programmes de la zone</h3>'+list(Object.values(g).map(a=>`<div class=card><b>${esc(a[0].user_name)}</b> <span class=tag>${a[0].kind=='terrain'?'Terrain':'Cellule'}</span> <span class=m>${esc(zn(a[0].zone_id))}</span>${a.map(s=>`<br>${esc(s.days.join(', '))} · ${esc(s.heure)} · avec ${esc(s.compagnon||'—')}`).join('')}</div>`),'<p class=m>Aucun programme soumis pour le moment.</p>')}
 
 /* ---------- Administration ---------- */
-function admView(){const t=[['mem','Membres',can('members')],['adm','Administrateurs',can('admins')],['zon','Zones',can('zones')]].filter(x=>x[2]);
+function admView(){const t=[['mem','Membres',can('members')],['req','Demandes de modification',can('members')],['adm','Administrateurs',can('admins')],['zon','Zones',can('zones')]].filter(x=>x[2]);
  if(!t.length)return hs().innerHTML='<div class=card>Aucun droit d’administration attribué pour le moment.</div>';
  if(!t.find(x=>x[0]==asub))asub=t[0][0];
  hs().innerHTML=`<div class=tabs>${t.map(([k,l])=>`<button class="${asub==k?'on':''}" data-a=asub data-v=${k}>${l}</button>`).join('')}</div><div id=ab></div>`;
- ({mem:memList,adm:admList,zon:zonList})[asub]()}
+ ({mem:memList,req:reqList,adm:admList,zon:zonList})[asub]()}
 async function memList(){const o={pending:0,active:1,blocked:2},d=((await sb.from('pm_profiles').select('*').neq('role_type','admin')).data||[]).sort((a,b)=>o[a.status]-o[b.status]);
  $('#ab').innerHTML=list(d.map(p=>`<div class=card data-id=${p.id}><b>${esc(p.full_name)}</b> <span class=tag>${{pending:'En attente',active:'Actif',blocked:'Bloqué'}[p.status]}</span><br><span class=m>${esc(p.email)} · ${esc(p.phone||'')} · ${esc(p.unit||'')}${p.identity_done?'':' · identité non remplie'}</span>${p.identity_done?idHtml(p):''}
  <select data-f=role_type>${['binome','serviteur','berger_poste','zone_lead'].map(r=>`<option value=${r} ${p.role_type==r?'selected':''}>${ROLES[r]}</option>`).join('')}</select>
