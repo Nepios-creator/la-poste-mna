@@ -74,7 +74,13 @@ function secCmp(r,pv){const cur=r.data?.secteurs_detail||[],old=pv?.data?.secteu
 const secHtml=s=>{if(!s?.length)return'';const ls=c=>s.filter(x=>x.cls==c&&x.label!='Nouveau secteur').map(x=>esc(x.name)).join(', ')||'—';
  return`<div class=card><h4 style="margin-top:0">🧭 Évolution par secteur</h4><p class=m>✅ Progressent : ${ls('up')}<br>⚠ En baisse : ${ls('dn')}<br>＝ Stables : ${ls('eq')}</p></div>`+[...s].sort((a,b)=>b.sc-a.sc).map(x=>`<div class=card><b>${esc(x.name)}</b> <span class="${x.cls}">${x.label}</span><br><span class=m>État : ${esc(x.etat||'—')}${x.pe&&x.pe!=x.etat?' (avant : '+esc(x.pe)+')':''}</span>${x.rows.length?`<table class=tb><tr><th>Indicateur</th><th>Avant</th><th>Maintenant</th><th></th></tr>${x.rows.map(y=>`<tr><td>${esc(y.l)}</td><td>${y.a??'—'}</td><td><b>${y.b}</b></td><td class=${y.c}>${esc(y.t)}</td></tr>`).join('')}</table>`:''}<p class=m>Obstacle principal : ${esc(x.obst||'—')} · Appui demandé : ${esc(x.appui||'—')}</p>${x.note?`<p>${esc(x.note)}</p>`:''}</div>`).join('')};
 H.scadd=()=>$('#scs').insertAdjacentHTML('beforeend',secRow({}));H.scrm=(v,b)=>b.closest('[data-sc]').remove();
-let LCM,PR=null,PRS=[],DIR={},LEX=null;
+let LCM,PR=null,PRS=[],DIR={},LEX=null,OFFLINE=false,flushing=false;
+const meKey='pm_me',isNet=m=>/fetch|network|internet|load failed|timeout|connexion/i.test(String(m||''));
+const lsGet=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch{return d}};
+const cachedMe=()=>lsGet(meKey,null);
+const ldKey=(t,id)=>`pm_ld_${me.id}_${id||'new_'+t}`;
+const obKey=()=>`pm_ob_${me.id}`,obGet=()=>lsGet(obKey(),[]),obSet=a=>localStorage.setItem(obKey(),JSON.stringify(a));
+const outBanner=()=>{const n=me?obGet().length:0;return n?`<div class=card><b>⏳ ${n} rapport${n>1?'s':''} en attente d'envoi</b><br><span class=m>Envoi automatique dès que le réseau est disponible. Voir « Rapports ».</span></div>`:''};
 const pOther=r=>r.a==me.id?r.b:r.a;
 const pActive=()=>PR&&PR.status=='active'?PR:null;
 const partnerId=()=>pActive()?pOther(PR):null;
@@ -133,14 +139,20 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b&
 const loadZ=async()=>zones=(await sb.from('pm_zones').select('*').order('name')).data||[];
 
 /* ---------- Démarrage ---------- */
-async function boot(){const{data:{session}}=await sb.auth.getSession();if(!session)return authView();
- me=(await sb.from('pm_profiles').select('*').eq('id',session.user.id).maybeSingle()).data;
+async function boot(){OFFLINE=false;
+ if(!navigator.onLine){const c=cachedMe();if(c){me=c;return offlineHome()}}
+ const{data:{session},error:se}=await sb.auth.getSession();
+ if(!session){const c=se&&cachedMe();if(c){me=c;return offlineHome()}return authView()}
+ const pr0=await sb.from('pm_profiles').select('*').eq('id',session.user.id).maybeSingle();
+ if(pr0.error&&isNet(pr0.error.message)){const c=cachedMe();if(c){me=c;return offlineHome()}return authView('Pas de connexion : reconnectez-vous quand le réseau revient.')}
+ me=pr0.data;
  if(!me){await sb.auth.signOut();return authView("Profil introuvable : inscrivez-vous d'abord.",'up')}
  $('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';
  if(me.must_change_pw)return pwForce();
  if(me.status!='active')return stateView();
+ try{const{id,full_name,role_type,extra_role,zone_id,status,is_super,door_count,door_precision,post_since,identity_done}=me;localStorage.setItem(meKey,JSON.stringify({id,full_name,role_type,extra_role,zone_id,status,is_super,door_count,door_precision,post_since,identity_done}))}catch{}
  await loadZ();if(!me.identity_done)return idView(true);enter()}
-async function enter(){syncPush();await Promise.all([loadInfo(),loadPair()]);if(me.is_super)LEX=(await sb.from('pm_export_log').select('at').order('at',{ascending:false}).limit(1)).data?.[0]?.at||null;const un=posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id);if(un.length)return gate(un);nav();show()}
+async function enter(){syncPush();flushOutbox();await Promise.all([loadInfo(),loadPair()]);if(me.is_super)LEX=(await sb.from('pm_export_log').select('at').order('at',{ascending:false}).limit(1)).data?.[0]?.at||null;const un=posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id);if(un.length)return gate(un);nav();show()}
 const pwBox=id=>`<div class=pw><input id=${id} type=password placeholder="${id=='np1'?'Nouveau mot de passe (8 caractères min.)':'Répétez le mot de passe'}" minlength=8 required><button type=button data-a=eye aria-label="Afficher ou cacher le mot de passe">👁</button></div>`;
 function pwFormHtml(title,intro,cancel){return`<div class=card><h3>🔑 ${title}</h3>${intro?`<p class=m>${intro}</p>`:''}<form id=pwf>${pwBox('np1')}${pwBox('np2')}<button>Enregistrer</button>${cancel?' <button type=button class=s data-a=pl data-v=prof>Annuler</button>':''}</form></div>`}
 function pwBind(done){$('#pwf').onsubmit=async e=>{e.preventDefault();const a=$('#np1').value;if(a!=$('#np2').value)return alert('Impossible : les deux mots de passe ne sont pas identiques.');
@@ -174,7 +186,7 @@ H.inst=async()=>{if(dip){dip.prompt();await dip.userChoice;dip=null;return}alert
 H.inv=async()=>{const t="Installe La Poste MNA, l'application des Églises de la Nouvelle Alliance. Ouvre ce lien (dans Chrome sur Android, Safari sur iPhone), puis choisis « Installer » ou « Ajouter à l'écran d'accueil » : "+location.origin;
  if(navigator.share){try{await navigator.share({title:'La Poste MNA',text:t,url:location.origin});return}catch(e){if(e.name=='AbortError')return}}
  window.open('https://wa.me/?text='+encodeURIComponent(t))};
-Object.assign(H,{out:async()=>{await dropPush();sb.auth.signOut()},ref:boot,am:v=>authView('',v),tab:v=>{tab=v;pv='';cur=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()},pl:v=>{pv=v;plusView()}});
+Object.assign(H,{out:async()=>{localStorage.removeItem(meKey);await dropPush();sb.auth.signOut()},ref:boot,am:v=>authView('',v),tab:v=>{tab=v;pv='';cur=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()},pl:v=>{pv=v;plusView()}});
 
 /* ---------- Identité et photo ---------- */
 const LB={nom:'Nom',postnom:'Post-nom',prenom:'Prénom',birth_date:'Date de naissance',birth_place:'Lieu de naissance',ebk:"Participation à l'EBK",ebk_session:'Session EBK',sexe:'Sexe',etat_civil:'État civil',adr_pays:'Pays',adr_ville:'Ville',adr_commune:'Commune',adr_quartier:'Quartier',adr_avenue:'Avenue',adr_numero:'Numéro',phone:'Téléphone',minister_type:"Statut dans l'église",ordination_year:"Année d'ordination",ministry:'Ministère',ordination_where:'Ordination',photo_path:'Photo de profil'};
@@ -313,7 +325,7 @@ function gate(un){$('#nav').innerHTML='';app.innerHTML=`<div class=card><h3>📢
 H.gok=async()=>{await markP();nav();show()};
 async function postsView(){await loadInfo();const adm=me.role_type=='admin',ids=posts.filter(p=>adm||p.author_id==me.id).map(p=>p.id),V={};
  if(ids.length)((await sb.from('pm_post_views').select('post_id,user_name,seen_at').in('post_id',ids)).data||[]).forEach(v=>(V[v.post_id]??=[]).push(v));
- app.innerHTML=pushCard()+pairBanner()+(canPub()?'<button data-a=pnew>+ Publier un communiqué</button>':'')+list(posts.map(p=>postCard(p,V,ids.includes(p.id)&&(adm?can('messages')||p.author_id==me.id:true))),'<p class=m>Aucun communiqué pour le moment.</p>');imgs(app);await markP();nav()}
+ app.innerHTML=pushCard()+pairBanner()+outBanner()+(canPub()?'<button data-a=pnew>+ Publier un communiqué</button>':'')+list(posts.map(p=>postCard(p,V,ids.includes(p.id)&&(adm?can('messages')||p.author_id==me.id:true))),'<p class=m>Aucun communiqué pour le moment.</p>');imgs(app);await markP();nav()}
 const aud=()=>me.role_type=='admin'?`<label class=m>Qui verra cette publication ?</label><select name=zone>${me.is_super||!me.scope_zones?'<option value="">📢 Public : tout le monde</option>':''}${zones.filter(z=>me.is_super||!me.scope_zones||me.scope_zones.includes(z.id)).map(z=>`<option value=${z.id}>📍 Zone ${esc(z.name)} seulement</option>`).join('')}</select>`:'<div class=ins>📍 Publication de zone : visible uniquement par les membres de votre zone. Seule l\'administration peut publier pour tout le monde.</div>';
 H.pnew=()=>{app.innerHTML=`<div class=card><h3>Nouveau communiqué</h3><form id=pf2><input name=title placeholder="Titre" required><textarea name=body rows=5 placeholder="Texte du communiqué"></textarea><label class=m>Image (facultatif)</label><input type=file name=img accept="image/*"><label class=m>Liens de formation (un par ligne : Titre | https://adresse)</label><textarea name=links rows=3 placeholder="Formation YouTube | https://youtube.com/…"></textarea>${aud()}<button>Publier</button> <button type=button class=s data-a=tab data-v=inf>Annuler</button></form></div>`;
  $('#pf2').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;const f=new FormData(e.target),im=f.get('img');let path=null;
@@ -345,15 +357,17 @@ function repView(){const lead=me.role_type=='zone_lead',adm=me.role_type=='admin
  sub=='mine'?mineList():recList()}
 async function mineList(){const all=(await sb.from('pm_reports').select('id,type,period_label,status,created_at').eq('author_id',me.id).order('period_start',{ascending:false})).data||[],since=new Date(me.post_since||0),data=all.filter(r=>new Date(r.created_at)>=since),olds=all.filter(r=>new Date(r.created_at)<since);
  const dual=has('binome')&&has('berger_poste'),blockT=!!pActive()&&!isPrincipal(),tm=blockT?(await sb.from('pm_reports').select('id,type,period_label').eq('author_id',PR.principal).eq('status','submitted').order('period_start',{ascending:false})).data||[]:[];
- $('#rb').innerHTML=(dual?(blockT?'':'<button data-a=new data-v=terrain>+ Rapport de terrain</button> ')+'<button data-a=new data-v=cellule_hebdo>+ Rapport de cellule</button>':(blockT&&myType()=='terrain'?'':'<button data-a=new>+ Nouveau rapport</button>'))+(blockT?`<div class=ins>👫 Dans votre binôme, c'est <b>${esc(nmOf(PR.principal))}</b> (évangéliste principal) qui envoie le rapport de terrain.</div>`:'')+(tm.length?'<h4>Rapports envoyés par mon binôme</h4>'+tm.map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>Envoyé</span></div>`).join(''):'')+list((data||[]).map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>${r.status=='draft'?'Brouillon':'Envoyé'}</span></div>`),'<p class=m>Aucun rapport pour le moment.</p>')+(olds.length?`<details class=card><summary><b>🗄 Archives de mes anciens postes (${olds.length})</b></summary>${olds.map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>${r.status=='draft'?'Brouillon':'Envoyé'}</span></div>`).join('')}</details>`:'')}
+ $('#rb').innerHTML=(dual?(blockT?'':'<button data-a=new data-v=terrain>+ Rapport de terrain</button> ')+'<button data-a=new data-v=cellule_hebdo>+ Rapport de cellule</button>':(blockT&&myType()=='terrain'?'':'<button data-a=new>+ Nouveau rapport</button>'))+(blockT?`<div class=ins>👫 Dans votre binôme, c'est <b>${esc(nmOf(PR.principal))}</b> (évangéliste principal) qui envoie le rapport de terrain.</div>`:'')+(tm.length?'<h4>Rapports envoyés par mon binôme</h4>'+tm.map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>Envoyé</span></div>`).join(''):'')+list((data||[]).map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>${r.status=='draft'?'Brouillon':'Envoyé'}</span></div>`),'<p class=m>Aucun rapport pour le moment.</p>')+lsList()+(olds.length?`<details class=card><summary><b>🗄 Archives de mes anciens postes (${olds.length})</b></summary>${olds.map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>${r.status=='draft'?'Brouillon':'Envoyé'}</span></div>`).join('')}</details>`:'')}
 H.new=v=>{if((v||myType())=='terrain'){if(pActive()&&!isPrincipal()){alert("Dans un binôme, c'est l'évangéliste principal ("+nmOf(PR.principal)+") qui envoie le rapport de terrain. Écrivez-lui pour collaborer.");return}if(me.door_count==null){alert("Avant votre premier rapport de terrain, indiquez le nombre de portes de votre secteur (une seule fois).");H.tab('plus');H.pl('sched');return}}formView(null,v)};
 H.open=async v=>{const{data:r}=await sb.from('pm_reports').select('*').eq('id',v).single();r.status=='draft'&&r.author_id==me.id?formView(r):detailView(r)};
-async function formView(r,tp){const type=r?.type||tp||myType(),d=r?.data||{};let inc=[],sel=new Set(r?.inc||[]);
- if(type=='zone'){inc=(await sb.from('pm_reports').select('id,type,author_name,period_label,data').neq('type','zone').eq('status','submitted').order('period_start',{ascending:false}).limit(200)).data||[];
+async function formView(r,tp){let restored=false;const t0=r?.type||tp||myType(),sv=lsGet(ldKey(t0,r?.id),null);
+ if(sv&&sv.data){r={...(r||{}),id:r?.id,type:t0,data:sv.data,period_start:sv.date,title:sv.title,inc:sv.inc};restored=true}
+ const type=r?.type||tp||myType(),d=r?.data||{};let inc=[],sel=new Set(r?.inc||[]);
+ if(type=='zone'){const ri=await sb.from('pm_reports').select('id,type,author_name,period_label,data').neq('type','zone').eq('status','submitted').order('period_start',{ascending:false}).limit(200);if(ri.error)inc=lsGet('pm_inc_'+me.id,[]);else{inc=ri.data||[];try{localStorage.setItem('pm_inc_'+me.id,JSON.stringify(inc.map(x=>({id:x.id,type:x.type,author_name:x.author_name,period_label:x.period_label,data:{secteur:x.data?.secteur}}))))}catch{}}
   if(r?.id&&!r.inc)sel=new Set(((await sb.from('pm_report_links').select('report_id').eq('zone_report_id',r.id)).data||[]).map(x=>x.report_id))}
- let pa=[];if(type=='cellule_hebdo'){const p0=(await sb.from('pm_reports').select('data').eq('author_id',me.id).eq('type','cellule_hebdo').eq('status','submitted').order('period_start',{ascending:false}).limit(1)).data?.[0];pa=p0?.data?.absents||[]}
- let pz=[],nm=[];if(type=='zone'){const q0=(await sb.from('pm_reports').select('data').eq('author_id',me.id).eq('type','zone').eq('status','submitted').order('period_start',{ascending:false}).limit(1)).data?.[0];pz=q0?.data?.secteurs_detail||[];nm=[...new Set([...inc.filter(x=>x.type=='terrain').map(x=>(x.data?.secteur||'').trim()),...pz.map(x=>x.name)].filter(Boolean))]}
- app.innerHTML=`<div class=card><h3>${TYPES[type]}</h3>${type=='terrain'&&isPrincipal()?`<div class=ins>👫 Vous parlez au nom du binôme : <b>${esc(me.full_name)}</b> et <b>${esc(nmOf(partnerId()))}</b></div>`:''}<form id=rf><label class=m>Date du rapport (début de la semaine)</label><input type=date name=date value=${r?.period_start||today()} required><input name=title placeholder="Titre (facultatif)" value="${esc(r?.title)}">
+ let pa=[];if(type=='cellule_hebdo'){const rp=await sb.from('pm_reports').select('data').eq('author_id',me.id).eq('type','cellule_hebdo').eq('status','submitted').order('period_start',{ascending:false}).limit(1);if(rp.error)pa=lsGet('pm_pa_'+me.id,[]);else{pa=rp.data?.[0]?.data?.absents||[];try{localStorage.setItem('pm_pa_'+me.id,JSON.stringify(pa))}catch{}}}
+ let pz=[],nm=[];if(type=='zone'){const rq=await sb.from('pm_reports').select('data').eq('author_id',me.id).eq('type','zone').eq('status','submitted').order('period_start',{ascending:false}).limit(1);if(rq.error)pz=lsGet('pm_pz_'+me.id,[]);else{pz=rq.data?.[0]?.data?.secteurs_detail||[];try{localStorage.setItem('pm_pz_'+me.id,JSON.stringify(pz))}catch{}}nm=[...new Set([...inc.filter(x=>x.type=='terrain').map(x=>(x.data?.secteur||'').trim()),...pz.map(x=>x.name)].filter(Boolean))]}
+ app.innerHTML=`<div class=card><h3>${TYPES[type]}</h3>${OFFLINE?'<button type=button class=s data-a=ofh>← Retour</button>':''}${restored?`<div class=ins>📱 Brouillon retrouvé sur ce téléphone : vos dernières saisies ont été reprises. <button type=button class=s data-a=ldclr data-k="${esc(ldKey(type,r?.id))}" data-t=${type} data-i="${r?.id||''}">Repartir de zéro</button></div>`:''}${type=='terrain'&&isPrincipal()?`<div class=ins>👫 Vous parlez au nom du binôme : <b>${esc(me.full_name)}</b> et <b>${esc(nmOf(partnerId()))}</b></div>`:''}<form id=rf><label class=m>Date du rapport (début de la semaine)</label><input type=date name=date value=${r?.period_start||today()} required><input name=title placeholder="Titre (facultatif)" value="${esc(r?.title)}">
  ${F[type].map(([k,l,t])=>`<label class=m>${l}</label>`+(t=='a'?`<textarea name=d_${k} rows=3>${esc(d[k])}</textarea>`:t[0]=='s'?`<select name=d_${k}>${t.slice(2).split('|').map(o=>`<option ${d[k]==o?'selected':''}>${o}</option>`).join('')}</select>`:`<input name=d_${k} type=${t=='n'?'number min=0':'text'} value="${esc(d[k])}">`)).join('')}
  ${type=='zone'?'<h4>Rapports reçus à inclure</h4>'+list(inc.map(x=>`<label><input class=ck type=checkbox name=inc value=${x.id} ${sel.has(x.id)?'checked':''}>${TYPES[x.type]} · ${esc(x.author_name)} · ${esc(x.period_label)}</label><br>`)):''}
  ${type=='cellule_hebdo'?absForm(d,pa):''}${type=='zone'?secForm(d,pz,nm):''}
@@ -363,17 +377,42 @@ async function formView(r,tp){const type=r?.type||tp||myType(),d=r?.data||{};let
    data.suivi=g('sv_name').map((n,i)=>({name:n,prev_reason:g('sv_prev')[i],done:g('sv_done')[i],reason_now:g('sv_reason')[i],cause:g('sv_cause')[i],prevent:g('sv_prevent')[i]}))}
   if(type=='zone')data.secteurs_detail=g('sc_name').map((n,i)=>({name:n.trim(),portes:g('sc_portes')[i],foyers:g('sc_foyers')[i],etudes:g('sc_etudes')[i],nouveaux:g('sc_nouveaux')[i],reco:g('sc_reco')[i],etat:g('sc_etat')[i],obst:g('sc_obst')[i],appui:g('sc_appui')[i],note:(g('sc_note')[i]||'').trim()})).filter(a=>a.name);
   return{id:r?.id,type,date:x.date,title:x.title,data,inc:[...document.querySelectorAll('[name=inc]:checked')].map(i=>i.value)}};
- $('#rf').onsubmit=e=>{e.preventDefault();W=coll();if(type=='zone'&&!W.data.secteurs_detail.length)return alert('Ajoutez au moins un secteur avec sa situation réelle.');review()}}
+ $('#rf').onsubmit=e=>{e.preventDefault();W=coll();if(type=='zone'&&!W.data.secteurs_detail.length)return alert('Ajoutez au moins un secteur avec sa situation réelle.');review()};
+ let tm0;const sv0=()=>{clearTimeout(tm0);tm0=setTimeout(()=>{try{localStorage.setItem(ldKey(type,r?.id),JSON.stringify({...coll(),ts:Date.now()}))}catch{}},600)};$('#rf').addEventListener('input',sv0);$('#rf').addEventListener('change',sv0)}
 H.draft=async()=>{W=coll();await persist('draft')};
 function review(){app.innerHTML=`<div class=card><h3>Vérification avant envoi</h3><p class=m>${TYPES[W.type]} · semaine du ${esc(W.date)}</p>${body(W)}${W.type=='zone'?`<p class=m>Rapports inclus : ${W.inc.length}</p>`:''}<p><b>Après l'envoi, ce rapport ne pourra plus être modifié.</b></p><button class=s data-a=edit>← Modifier</button> <button class=g data-a=send>Envoyer définitivement</button></div>`}
 H.edit=()=>formView({...W,period_start:W.date});
 H.send=async()=>(await yes('Envoyer définitivement ?','Aucune modification ne sera possible ensuite.'))&&persist('submitted');
-async function persist(status){const row={period_start:W.date,period_label:'Semaine du '+W.date,title:W.title||null,data:W.data,status:'draft'};let id=W.id,e;
- if(id)e=(await sb.from('pm_reports').update(row).eq('id',id)).error;else{const r=await sb.from('pm_reports').insert({...row,type:W.type}).select('id').single();e=r.error;id=r.data?.id}
- if(e)return alert(e.message);
- if(W.type=='zone'){await sb.from('pm_report_links').delete().eq('zone_report_id',id);if(W.inc.length)await sb.from('pm_report_links').insert(W.inc.map(x=>({zone_report_id:id,report_id:x})))}
- if(status=='submitted'){const r=await sb.from('pm_reports').update({status:'submitted'}).eq('id',id);if(r.error)return alert(r.error.message)}
- sub='mine';repView()}
+async function sendReport(Wx,status,onId){const row={period_start:Wx.date,period_label:'Semaine du '+Wx.date,title:Wx.title||null,data:Wx.data,status:'draft'};let id=Wx.id,e;
+ if(id)e=(await sb.from('pm_reports').update(row).eq('id',id)).error;else{const r=await sb.from('pm_reports').insert({...row,type:Wx.type}).select('id').single();e=r.error;id=r.data?.id;if(id){Wx.id=id;onId&&onId(id)}}
+ if(e)return e.message;
+ if(Wx.type=='zone'){const d1=await sb.from('pm_report_links').delete().eq('zone_report_id',id);if(d1.error)return d1.error.message;if(Wx.inc.length){const i1=await sb.from('pm_report_links').insert(Wx.inc.map(x=>({zone_report_id:id,report_id:x})));if(i1.error)return i1.error.message}}
+ if(status=='submitted'){const r=await sb.from('pm_reports').update({status:'submitted'}).eq('id',id);if(r.error)return r.error.message}
+ return null}
+function queueReport(Wx,status){const a=obGet().filter(x=>!(x.w.id&&x.w.id==Wx.id));a.push({w:Wx,status,at:Date.now()});obSet(a);localStorage.removeItem(ldKey(Wx.type,Wx.id));localStorage.removeItem(ldKey(Wx.type,null));alert('Pas de connexion : votre rapport est gardé sur ce téléphone et partira automatiquement dès que le réseau revient ✓')}
+async function persist(status){const back=()=>OFFLINE?offlineHome():(sub='mine',repView());
+ if(!navigator.onLine){queueReport(W,status);return back()}
+ const e=await sendReport(W,status);
+ if(e){if(isNet(e)){queueReport(W,status);return back()}return alert(e)}
+ localStorage.removeItem(ldKey(W.type,W.id));localStorage.removeItem(ldKey(W.type,null));sub='mine';repView()}
+async function flushOutbox(){if(flushing||!navigator.onLine||!me)return;flushing=true;let n=0;
+ try{for(const it of obGet()){if(it.err)continue;const e=await sendReport(it.w,it.status,id=>{it.w.id=id;obSet(obGet().map(x=>x.at==it.at?it:x))});
+  if(e===null){obSet(obGet().filter(x=>x.at!=it.at));n++}else if(isNet(e))break;else{it.err=e;obSet(obGet().map(x=>x.at==it.at?it:x))}}}
+ finally{flushing=false}
+ if(n){alert(n+' rapport'+(n>1?'s':'')+' en attente envoyé'+(n>1?'s':'')+' ✓');if(tab=='rep'&&sub=='mine'&&!OFFLINE)mineList()}}
+addEventListener('online',()=>{if(OFFLINE)boot();else flushOutbox()});
+setInterval(()=>{if(me&&!OFFLINE&&navigator.onLine&&obGet().length)flushOutbox()},30000);
+function newBtns(){const ts=[];if(has('binome'))ts.push('terrain');if(has('berger_poste')||me.role_type=='serviteur')ts.push('cellule_hebdo');if(me.role_type=='zone_lead')ts.push('zone');return ts.map(t=>`<button data-a=new data-v=${t}>+ ${TYPES[t]}</button>`).join(' ')}
+const lsList=()=>{const ob=obGet(),dr=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith('pm_ld_'+me.id+'_')){const v=lsGet(k,null);if(v&&v.data)dr.push({k,v})}}
+ return(ob.length?`<h4>⏳ En attente d'envoi (${ob.length})</h4>`+ob.map(x=>`<div class=card><b>${TYPES[x.w.type]}</b><br><span class=m>Semaine du ${esc(x.w.date)} · ${x.status=='submitted'?'à envoyer définitivement':'brouillon'}</span>${x.err?`<div class=ins>⚠ ${esc(x.err)}</div>`:'<br><span class=m>Envoi automatique dès le retour du réseau.</span>'}<br><button class=s data-a=obedit data-v=${x.at}>Modifier</button> <button class=r data-a=obdel data-v=${x.at}>Annuler</button></div>`).join(''):'')+(dr.length?'<h4>📱 Brouillons sur ce téléphone</h4>'+dr.map(({k,v})=>`<div class=card><b>${TYPES[v.type]}</b><br><span class=m>Semaine du ${esc(v.date)} · pas encore enregistré en ligne</span><br><button class=s data-a=ldopen data-v="${esc(k)}">Reprendre</button> <button class=r data-a=lddel data-v="${esc(k)}">Supprimer</button></div>`).join(''):'')};
+function offlineHome(){OFFLINE=true;$('#nav').innerHTML='';$('#who').innerHTML=esc(me.full_name)+' <span class=tag>Hors connexion</span>';
+ app.innerHTML=`<div class=card><h3>📴 Pas de connexion</h3><p class=m>Vous pouvez remplir un rapport : il est gardé sur ce téléphone et envoyé automatiquement dès que le réseau revient.</p>${newBtns()}<br><button class=s data-a=ref>Réessayer la connexion</button></div>${lsList()}`}
+H.ofh=()=>offlineHome();
+H.obedit=v=>{const a=obGet(),x=a.find(i=>i.at==v);if(!x)return;obSet(a.filter(i=>i.at!=v));formView({...x.w,period_start:x.w.date})};
+H.obdel=async v=>{if(!await yes('Annuler ce rapport en attente ?','Il ne sera pas envoyé.'))return;obSet(obGet().filter(i=>i.at!=v));OFFLINE?offlineHome():mineList()};
+H.ldopen=v=>{const x=lsGet(v,null);if(!x)return;formView({...x,period_start:x.date})};
+H.lddel=async v=>{if(!await yes('Supprimer ce brouillon du téléphone ?'))return;localStorage.removeItem(v);OFFLINE?offlineHome():mineList()};
+H.ldclr=(v,b)=>{localStorage.removeItem(b.dataset.k);b.dataset.i?H.open(b.dataset.i):formView(null,b.dataset.t)};
 async function detailView(r){let extra='',mk='';
  const pv=r.author_id?(await sb.from('pm_reports').select('*').eq('author_id',r.author_id).eq('type',r.type).eq('status','submitted').lt('period_start',r.period_start).order('period_start',{ascending:false}).limit(1)).data?.[0]:null;
  const doors=r.type=='terrain'&&r.author_id?(await sb.from('pm_profiles').select('door_count').eq('id',r.author_id).maybeSingle()).data?.door_count:null;
