@@ -17,10 +17,21 @@ nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid 
 .ck{width:auto;margin-right:6px}.hid{display:none}.lnk{display:inline-block;margin:4px 0;color:var(--n);font-weight:700}
 .ph{width:96px;height:96px;border-radius:50%;object-fit:cover;background:#ddd;display:block;margin:6px auto}.ins{background:#fff8e1;border-left:4px solid var(--g);padding:8px;border-radius:6px;white-space:pre-wrap}
 </style></head><body>
-<header><span><img src="icon-192.png" alt=""><b>La Poste MNA</b></span><span id="who"></span></header><div class="c" id="app"></div><nav id="nav"></nav>
+<header><span><img src="icon-192.png" alt=""><b>La Poste MNA</b></span><span id="who"></span></header><div id="ob" hidden style="background:#b3261e;color:#fff;text-align:center;padding:6px 10px;font-size:13px"></div><div class="c" id="app"></div><nav id="nav"></nav>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
-const sb=supabase.createClient('https://aehxiexsotqpmnmsfwgq.supabase.co','sb_publishable_4x9NR7lwOhWvvL4Um-WTAA_756gELy4');
+const DC='pm-data-',CACHE_RPC=/\/rpc\/(pm_report_status|pm_my_status|pm_pair_candidates|pm_unread)(\?|$)/;
+async function dataFetch(input,init){
+ let req;try{req=new Request(input,init)}catch{return fetch(input,init)}
+ const u=req.url,uid=(typeof me!=='undefined'&&me&&me.id)||((JSON.parse(localStorage.getItem('pm_me')||'null')||{}).id);
+ const readable=u.includes('/rest/v1/')&&uid&&(req.method=='GET'||(req.method=='POST'&&CACHE_RPC.test(u)));
+ if(!readable||!self.caches)return fetch(req);
+ const cache=await caches.open(DC+uid);let k=u+'|'+(req.headers.get('accept')||'');if(req.method=='POST')k+='|'+await req.clone().text();
+ const key=new Request('https://pm-cache.local/'+encodeURIComponent(k));
+ const net=fetch(req.clone()).then(res=>{if(res.ok)cache.put(key,res.clone());return res});
+ const hit=await cache.match(key);if(!hit)return net;
+ return Promise.race([net.catch(()=>hit),new Promise(r=>setTimeout(()=>r(hit),4500))])}
+const sb=supabase.createClient('https://aehxiexsotqpmnmsfwgq.supabase.co','sb_publishable_4x9NR7lwOhWvvL4Um-WTAA_756gELy4',{global:{fetch:dataFetch}});
 const $=s=>document.querySelector(s),app=$('#app'),H={},hs=()=>$('#pb')||app;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ROLES={binome:'Évangéliste (binôme)',serviteur:'Serviteur/Servante',berger_poste:'Berger de Poste',zone_lead:'Responsable de zone',admin:'Administration'};
@@ -74,7 +85,7 @@ function secCmp(r,pv){const cur=r.data?.secteurs_detail||[],old=pv?.data?.secteu
 const secHtml=s=>{if(!s?.length)return'';const ls=c=>s.filter(x=>x.cls==c&&x.label!='Nouveau secteur').map(x=>esc(x.name)).join(', ')||'—';
  return`<div class=card><h4 style="margin-top:0">🧭 Évolution par secteur</h4><p class=m>✅ Progressent : ${ls('up')}<br>⚠ En baisse : ${ls('dn')}<br>＝ Stables : ${ls('eq')}</p></div>`+[...s].sort((a,b)=>b.sc-a.sc).map(x=>`<div class=card><b>${esc(x.name)}</b> <span class="${x.cls}">${x.label}</span><br><span class=m>État : ${esc(x.etat||'—')}${x.pe&&x.pe!=x.etat?' (avant : '+esc(x.pe)+')':''}</span>${x.rows.length?`<table class=tb><tr><th>Indicateur</th><th>Avant</th><th>Maintenant</th><th></th></tr>${x.rows.map(y=>`<tr><td>${esc(y.l)}</td><td>${y.a??'—'}</td><td><b>${y.b}</b></td><td class=${y.c}>${esc(y.t)}</td></tr>`).join('')}</table>`:''}<p class=m>Obstacle principal : ${esc(x.obst||'—')} · Appui demandé : ${esc(x.appui||'—')}</p>${x.note?`<p>${esc(x.note)}</p>`:''}</div>`).join('')};
 H.scadd=()=>$('#scs').insertAdjacentHTML('beforeend',secRow({}));H.scrm=(v,b)=>b.closest('[data-sc]').remove();
-let LCM,PR=null,PRS=[],DIR={},LEX=null,OFFLINE=false,flushing=false,MQ={},LATE=[],NEWD=null,FW=0,FWM=[],MEETS=[],SKEW=0,ALERT_OPEN=false,RMID=null,MRT=null,CM=null;
+let UNR={},UNRT=0,FORM=null,READY=false,PVID=null,LCM,PR=null,PRS=[],DIR={},LEX=null,OFFLINE=false,flushing=false,MQ={},LATE=[],NEWD=null,FW=0,FWM=[],MEETS=[],SKEW=0,ALERT_OPEN=false,RMID=null,MRT=null,CM=null;
 const meKey='pm_me',isNet=m=>/fetch|network|internet|load failed|timeout|connexion/i.test(String(m||''));
 const lsGet=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch{return d}};
 const cachedMe=()=>lsGet(meKey,null);
@@ -127,7 +138,7 @@ const shrink=(f,max)=>new Promise((res,rej)=>{const i=new Image(),fb=()=>/^image
  i.onerror=fb;i.onload=()=>{try{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(i.width*k));c.height=Math.max(1,Math.round(i.height*k));c.getContext('2d').drawImage(i,0,0,c.width,c.height);c.toBlob(x=>x?res(x):fb(),'image/jpeg',.8)}catch{fb()}};i.src=URL.createObjectURL(f);setTimeout(fb,15000)});
 addEventListener('unhandledrejection',e=>alert('Une erreur est survenue : '+(e.reason?.message||e.reason)));
 const upl=async(f,n)=>{if(!f){alert('Fichier illisible.');return null}const path=`${me.id}/${Date.now()}_${n.replace(/[^\w.\-]/g,'_')}`;const{error}=await sb.storage.from('pm-files').upload(path,f,{contentType:f.type||'application/octet-stream'});if(error){alert('Fichier refusé : '+error.message);return null}return path};
-window.alert=m=>{const t=document.createElement('div'),bad=/refus|impossible|erreur|autoris|choisissez|obligatoire|déjà|illisible|introuvable|invalide/i.test(m);t.style.cssText='position:fixed;left:12px;right:12px;top:72px;z-index:100;color:#fff;padding:12px 14px;border-radius:10px;box-shadow:0 4px 14px #0006;white-space:pre-wrap;background:'+(bad?'#b3261e':'#14284b');t.textContent=m;t.onclick=()=>t.remove();document.body.appendChild(t);setTimeout(()=>t.remove(),6500)};
+window.alert=m=>{const t=document.createElement('div'),bad=/refus|impossible|erreur|autoris|choisissez|obligatoire|déjà|illisible|introuvable|invalide|incorrect/i.test(m);t.style.cssText='position:fixed;left:12px;right:12px;top:72px;z-index:100;color:#fff;padding:12px 14px;border-radius:10px;box-shadow:0 4px 14px #0006;white-space:pre-wrap;background:'+(bad?'#b3261e':'#14284b');t.textContent=m;t.onclick=()=>t.remove();document.body.appendChild(t);setTimeout(()=>t.remove(),6500)};
 function ask(title,o={}){const{text='',input=false,req=true,ok='Confirmer',ph='',check=''}=o;return new Promise(res=>{const d=document.createElement('div');d.style.cssText='position:fixed;inset:0;background:#0009;z-index:99;display:flex;align-items:center;justify-content:center;padding:16px';
  d.innerHTML=`<div class=card style="max-width:440px;width:100%;margin:0"><h3 style="margin-top:0">${esc(title)}</h3><p class=m style="white-space:pre-wrap">${esc(text)}</p>${input?`<textarea id=aq rows=3 placeholder="${esc(ph)}"></textarea>`:''}${check?`<label style="display:block;margin:8px 0"><input class=ck type=checkbox id=ac>${esc(check)}</label>`:''}<button class=s data-q=0>Annuler</button> <button class=g data-q=1>${esc(ok)}</button></div>`;document.body.appendChild(d);const t=d.querySelector('#aq');if(t)t.focus();
  d.onclick=e=>{const b=e.target.closest('[data-q]');if(!b)return;const y=b.dataset.q=='1',v=t?t.value.trim():'';if(y&&input&&req&&!v){t.style.border='2px solid #b3261e';t.placeholder='Ce champ est obligatoire';return}d.remove();res(y?(check?{v,c:d.querySelector('#ac').checked}:(input?v:true)):null)}})}
@@ -139,20 +150,34 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b&
 const loadZ=async()=>zones=(await sb.from('pm_zones').select('*').order('name')).data||[];
 
 /* ---------- Démarrage ---------- */
-async function boot(){OFFLINE=false;
- if(!navigator.onLine){const c=cachedMe();if(c){me=c;return offlineHome()}}
- const{data:{session},error:se}=await sb.auth.getSession();
- if(!session){const c=se&&cachedMe();if(c){me=c;return offlineHome()}return authView()}
+async function enterCached(c){me=c;$('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';await loadZ();if(me.status!='active')return stateView();enter()}
+async function boot(){OFFLINE=false;netBar();
+ if(!navigator.onLine){const c=cachedMe();if(c)return enterCached(c);}
+ const gs=await Promise.race([sb.auth.getSession(),new Promise(r=>setTimeout(()=>r({data:{session:null},error:{message:'timeout'}}),7000))]),{data:{session},error:se}=gs;
+ if(!session){const c=se&&cachedMe();if(c)return enterCached(c);return authView()}
  const pr0=await sb.from('pm_profiles').select('*').eq('id',session.user.id).maybeSingle();
- if(pr0.error&&isNet(pr0.error.message)){const c=cachedMe();if(c){me=c;return offlineHome()}return authView('Pas de connexion : reconnectez-vous quand le réseau revient.')}
+ if(pr0.error&&isNet(pr0.error.message)){const c=cachedMe();if(c)return enterCached(c);return authView('Pas de connexion : reconnectez-vous quand le réseau revient.')}
  me=pr0.data;
  if(!me){await sb.auth.signOut();return authView("Profil introuvable : inscrivez-vous d'abord.",'up')}
  $('#who').innerHTML=esc(me.full_name)+'<a href="#" data-a=out>⎋</a>';
  if(me.must_change_pw)return pwForce();
  if(me.status!='active')return stateView();
- try{const{id,full_name,role_type,extra_role,zone_id,status,is_super,door_count,door_precision,post_since,identity_done}=me;localStorage.setItem(meKey,JSON.stringify({id,full_name,role_type,extra_role,zone_id,status,is_super,door_count,door_precision,post_since,identity_done}))}catch{}
+ try{localStorage.setItem(meKey,JSON.stringify(me))}catch{}
  await loadZ();if(!me.identity_done)return idView(true);enter()}
-async function enter(){syncPush();flushOutbox();await Promise.all([loadInfo(),loadPair(),loadMeets()]);await showAlertOverlay(await fetchAlerts());LATE=((await sb.rpc('pm_my_status',{p_week:monday(-1)})).data||[]).filter(r=>!r.sent&&!r.exempt);if(me.is_super)LEX=(await sb.from('pm_export_log').select('at').order('at',{ascending:false}).limit(1)).data?.[0]?.at||null;const un=posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id);if(un.length)return gate(un);nav();show()}
+const navKey=()=>'pm_nav_'+(me?.id||'');
+function saveNav(){if(!me||me.status!='active'||ALERT_OPEN||!READY)return;try{localStorage.setItem(navKey(),JSON.stringify({tab,pv,sub,asub,cur,RMID,PVID,form:FORM,y:Math.round(scrollY),t:Date.now()}))}catch{}}
+setInterval(saveNav,1500);addEventListener('pagehide',saveNav);document.addEventListener('visibilitychange',()=>{if(document.hidden)saveNav();else{refreshUnread()}});
+async function startApp(){const st=lsGet(navKey(),null),q=new URLSearchParams(location.search),fresh=!!st&&Date.now()-st.t<24*3600e3;let deep=null;
+ if(fresh&&st.tab){tab=st.tab;pv=st.pv||'';sub=st.sub||'mine';asub=st.asub||'mem';RMID=st.RMID||null;PVID=st.PVID||null}
+ if(q.get('room')){tab='plus';pv='room';RMID=q.get('room');deep=1}else if(q.get('pv')){tab='plus';pv='pv';PVID=q.get('pv');deep=1}
+ if(deep)history.replaceState(null,'',location.pathname);
+ nav();
+ if(!deep&&fresh&&st.form){st.form.id?H.open(st.form.id):formView(null,st.form.type)}
+ else if(!deep&&fresh&&tab=='msg'&&st.cur){await msgView();if(T.find(t=>t.k==st.cur))convView(st.cur)}
+ else await show();
+ if(!deep&&fresh&&st.y)setTimeout(()=>scrollTo(0,st.y),300);READY=true}
+if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',e=>{const d=e.data||{};if(!me||!READY||d.type!='open')return;if(d.room){RMID=d.room;tab='plus';pv='room';nav();plusView()}else if(d.pv){PVID=d.pv;tab='plus';pv='pv';nav();plusView()}});
+async function enter(){syncPush();flushOutbox();flushMsgs();refreshUnread();await Promise.all([loadInfo(),loadPair(),loadMeets()]);await showAlertOverlay(await fetchAlerts());LATE=((await sb.rpc('pm_my_status',{p_week:monday(-1)})).data||[]).filter(r=>!r.sent&&!r.exempt);if(me.is_super)LEX=(await sb.from('pm_export_log').select('at').order('at',{ascending:false}).limit(1)).data?.[0]?.at||null;const un=posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id);if(un.length)return gate(un);startApp()}
 const pwBox=id=>`<div class=pw><input id=${id} type=password placeholder="${id=='np1'?'Nouveau mot de passe (8 caractères min.)':'Répétez le mot de passe'}" minlength=8 required><button type=button data-a=eye aria-label="Afficher ou cacher le mot de passe">👁</button></div>`;
 function pwFormHtml(title,intro,cancel){return`<div class=card><h3>🔑 ${title}</h3>${intro?`<p class=m>${intro}</p>`:''}<form id=pwf>${pwBox('np1')}${pwBox('np2')}<button>Enregistrer</button>${cancel?' <button type=button class=s data-a=pl data-v=prof>Annuler</button>':''}</form></div>`}
 function pwBind(done){$('#pwf').onsubmit=async e=>{e.preventDefault();const a=$('#np1').value;if(a!=$('#np2').value)return alert('Impossible : les deux mots de passe ne sont pas identiques.');
@@ -172,8 +197,8 @@ async function authView(msg,mode='in'){await loadZ();$('#nav').innerHTML='';$('#
 function stateView(){$('#nav').innerHTML='';const bl=me.status=='blocked';
  app.innerHTML=`<div class=card><h3>${bl?'Compte bloqué':'En attente de validation'}</h3><p>${bl?"Votre accès a été suspendu par l'administration.":"Votre inscription est bien reçue. L'administration doit la valider avant d'activer votre espace."}</p><button data-a=ref>Actualiser</button> <button class=s data-a=out>Déconnexion</button></div>${inst()}`}
 const bad=()=>({inf:posts.filter(p=>!sp.has(p.id)&&p.author_id!=me.id).length,fil:shares.filter(s=>!ss.has(s.id)&&s.author_id!=me.id).length});
-function nav(){const b=bad(),t=[['inf','Infos'],['fil','Fichiers'],['rep','Rapports'],['msg','Messages'],['plus','Plus']];
- $('#nav').innerHTML=t.map(([k,l])=>`<button class="${tab==k?'on':''}" data-a=tab data-v=${k}>${l}${b[k]?`<span class=bd>${b[k]}</span>`:''}</button>`).join('')}
+function nav(){const b={...bad(),msg:UNRT},t=[['inf','Infos'],['fil','Fichiers'],['rep','Rapports'],['msg','Messages'],['plus','Plus']];
+ $('#nav').innerHTML=t.map(([k,l])=>`<button class="${tab==k?'on':''}" data-a=tab data-v=${k}>${l}${b[k]?`<span class=bd>${b[k]>99?'99+':b[k]}</span>`:''}</button>`).join('')}
 const show=()=>({inf:postsView,fil:filesView,rep:repView,msg:msgView,plus:plusView})[tab]();
 const u8=b=>{const p='='.repeat((4-b.length%4)%4),r=atob((b+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from([...r].map(c=>c.charCodeAt(0)))};
 const pushOk=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
@@ -186,7 +211,7 @@ H.inst=async()=>{if(dip){dip.prompt();await dip.userChoice;dip=null;return}alert
 H.inv=async()=>{const t="Installe La Poste MNA, l'application des Églises de la Nouvelle Alliance. Ouvre ce lien (dans Chrome sur Android, Safari sur iPhone), puis choisis « Installer » ou « Ajouter à l'écran d'accueil » : "+location.origin;
  if(navigator.share){try{await navigator.share({title:'La Poste MNA',text:t,url:location.origin});return}catch(e){if(e.name=='AbortError')return}}
  window.open('https://wa.me/?text='+encodeURIComponent(t))};
-Object.assign(H,{out:async()=>{localStorage.removeItem(meKey);await dropPush();sb.auth.signOut()},ref:boot,am:v=>authView('',v),tab:v=>{tab=v;pv='';cur=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()},pl:v=>{if(v=='room')RMID=null;pv=v;plusView()}});
+Object.assign(H,{out:async()=>{const u=me?.id;localStorage.removeItem(meKey);if(u)localStorage.removeItem('pm_nav_'+u);try{(await caches.keys()).filter(x=>x.startsWith(DC)).forEach(x=>caches.delete(x))}catch{}await dropPush();sb.auth.signOut()},ref:boot,am:v=>authView('',v),tab:v=>{tab=v;pv='';cur=null;FORM=null;nav();show()},sub:v=>{sub=v;repView()},asub:v=>{asub=v;admView()},pl:v=>{if(v=='room')RMID=null;if(v=='pv')PVID=null;pv=v;plusView()}});
 
 /* ---------- Identité et photo ---------- */
 const LB={nom:'Nom',postnom:'Post-nom',prenom:'Prénom',birth_date:'Date de naissance',birth_place:'Lieu de naissance',ebk:"Participation à l'EBK",ebk_session:'Session EBK',sexe:'Sexe',etat_civil:'État civil',adr_pays:'Pays',adr_ville:'Ville',adr_commune:'Commune',adr_quartier:'Quartier',adr_avenue:'Avenue',adr_numero:'Numéro',phone:'Téléphone',minister_type:"Statut dans l'église",ordination_year:"Année d'ordination",ministry:'Ministère',ordination_where:'Ordination',photo_path:'Photo de profil'};
@@ -269,29 +294,85 @@ H.rmopen=v=>{RMID=v;roomDetail(v)};
 H.rmback=()=>{RMID=null;clearInterval(MRT);roomView()};
 H.rmnew=()=>rmNew();
 async function rmNew(){const nz2=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
- const ds=((await sb.from('pm_dir').select('id,full_name,role_type,zone_id,status').eq('status','active')).data||[]).filter(p=>p.role_type!='admin').sort((a,b)=>a.full_name.localeCompare(b.full_name)),SEL=new Set();
- hs().innerHTML=`<div class=card><h3>Programmer une réunion</h3><form id=mf><input name=title placeholder="Titre de la réunion" required><textarea name=agenda rows=3 placeholder="Ordre du jour (facultatif)"></textarea><label class=m>Date</label><input type=date name=d min="${today()}" required><div style="display:flex;gap:8px"><div style="flex:1"><label class=m>Début</label><input type=time name=s required></div><div style="flex:1"><label class=m>Fin</label><input type=time name=e required></div></div><div class=ins>🔒 La salle s'ouvre à l'heure de début et se ferme à l'heure de fin. Une autre réunion ne pourra commencer que 4 heures après la fin de celle-ci.</div><label class=m>Inviter (facultatif) : un responsable de zone ou un membre, pour cette réunion seulement</label><input id=iq placeholder="🔎 Chercher un nom…"><div id=il></div><p class=m id=ic></p><button>Programmer et annoncer</button> <button type=button class=s data-a=rmback>Annuler</button></form></div>`;
+ const all0=(await sb.from('pm_dir').select('id,full_name,role_type,zone_id,status').eq('status','active')).data||[],ds=all0.filter(p=>p.role_type!='admin').sort((a,b)=>a.full_name.localeCompare(b.full_name)),ads=all0.filter(p=>p.role_type=='admin'),SEL=new Set();
+ hs().innerHTML=`<div class=card><h3>Programmer une réunion</h3><form id=mf><input name=title placeholder="Titre de la réunion" required><textarea name=agenda rows=3 placeholder="Ordre du jour (facultatif)"></textarea><label class=m>Date</label><input type=date name=d min="${today()}" required><div style="display:flex;gap:8px"><div style="flex:1"><label class=m>Début</label><input type=time name=s required></div><div style="flex:1"><label class=m>Fin</label><input type=time name=e required></div></div><div class=ins>🔒 La salle s'ouvre à l'heure de début et se ferme à l'heure de fin. Une autre réunion ne pourra commencer que 4 heures après la fin de celle-ci.</div><label class=m>Modérateur principal (gère qui écrit pendant la réunion)</label><select name=mod>${ads.map(a=>`<option value=${a.id} ${a.id==me.id?'selected':''}>${esc(a.full_name)}</option>`).join('')}</select><label class=m>Inviter (facultatif) : un responsable de zone ou un membre, pour cette réunion seulement</label><input id=iq placeholder="🔎 Chercher un nom…"><div id=il></div><p class=m id=ic></p><button>Programmer et annoncer</button> <button type=button class=s data-a=rmback>Annuler</button></form></div>`;
  const draw=()=>{const q=nz2($('#iq').value),f=ds.filter(p=>!q||nz2(p.full_name).includes(q)).slice(0,40);$('#il').innerHTML=f.map(p=>`<label style="display:block"><input class=ck type=checkbox data-i=${p.id} ${SEL.has(p.id)?'checked':''}>${esc(p.full_name)} <span class=m>· ${ROLES[p.role_type]}${zn(p.zone_id)?' · '+esc(zn(p.zone_id)):''}</span></label>`).join('')||'<p class=m>Aucun résultat.</p>';$('#ic').textContent=SEL.size+' invité(s) sélectionné(s)'};
  $('#iq').oninput=draw;$('#il').onchange=e=>{const i=e.target.dataset.i;if(!i)return;e.target.checked?SEL.add(i):SEL.delete(i);$('#ic').textContent=SEL.size+' invité(s) sélectionné(s)'};draw();
  $('#mf').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),st=new Date(f.get('d')+'T'+f.get('s')),en=new Date(f.get('d')+'T'+f.get('e'));
   if(!(en>st))return alert("Impossible : l'heure de fin doit être après l'heure de début.");const b=e.submitter;b.disabled=true;
-  const{data,error}=await sb.rpc('pm_meeting_create',{p_title:f.get('title'),p_agenda:f.get('agenda'),p_start:st.toISOString(),p_end:en.toISOString(),p_invitees:[...SEL]});
+  const{data,error}=await sb.rpc('pm_meeting_create',{p_title:f.get('title'),p_agenda:f.get('agenda'),p_start:st.toISOString(),p_end:en.toISOString(),p_invitees:[...SEL],p_moderator:f.get('mod')});
   if(error){b.disabled=false;return alert('Impossible : '+error.message)}
   alert("Réunion programmée ✓ Tous les administrateurs et les invités reçoivent l'annonce.");RMID=data;roomView()}}
 async function roomDetail(id){await loadMeets();const m=MEETS.find(x=>x.id==id);if(!m){RMID=null;return roomView()}
- const[inv,ms]=await Promise.all([sb.from('pm_meeting_invites').select('user_name').eq('meeting_id',id),sb.from('pm_meeting_msgs').select('*').eq('meeting_id',id).order('created_at')]);
- CM={m,msgs:ms.data||[],sig:''};const adm=me.role_type=='admin',st=mState(m),iv=inv.data||[];
- hs().innerHTML=`<button class=s data-a=rmback>← Réunions</button><div class=card><h3 style="margin-top:0">${esc(m.title)}</h3><div id=rstat></div><p class=m>${fdt(m.start_at)} → ${fh(m.end_at)}${m.ended_at?' (clôturée à '+fh(m.ended_at)+')':''}</p>${m.agenda?`<div class=ins>${esc(m.agenda)}</div>`:''}<p class=m>👥 Administration (tous)${iv.length?' + invités : '+iv.map(x=>esc(x.user_name)).join(', '):''}<br>Organisée par ${esc(m.created_by_name||'—')}</p>${adm&&st=='future'?'<button class=r data-a=rmcancel>Annuler la réunion</button>':''}${adm&&st=='open'?'<button class=r data-a=rmend>Terminer la réunion maintenant</button>':''}</div><div id=rml></div><div id=rmc></div>`;
- drawRoom(true);clearInterval(MRT);MRT=setInterval(()=>{if(!RMID||tab!='plus'||pv!='room'){clearInterval(MRT);return}refreshRoom()},8000)}
-function drawRoom(force){const{m,msgs}=CM,st=mState(m),sig=st+'|'+msgs.length+'|'+(m.ended_at||'');if(!force&&sig==CM.sig)return;CM.sig=sig;
- $('#rstat').innerHTML={future:`<div class=ins>🔒 Salle fermée. Ouverture le ${fdt(m.start_at)}.</div>`,open:`<div class=ins style="border-color:#1a7f37">🟢 Réunion en cours : fermeture automatique à ${fh(m.ended_at||m.end_at)}.</div>`,ended:'<div class=ins>🔒 Réunion terminée : salle fermée. Les échanges ci-dessous forment le compte rendu.</div>',cancelled:'<div class=ins>❌ Réunion annulée.</div>'}[st];
- $('#rml').innerHTML=list(msgs.map(x=>`<div class="msg ${x.sender_id==me.id?'me':'ot'}"><span class=m>${esc(x.sender_name||'—')} · ${fh(x.created_at)}</span><br>${esc(x.body||'')}${x.file_path?(x.file_kind=='image'?`<br><img data-p="${esc(x.file_path)}" style="max-width:100%;border-radius:8px">`:`<br><a href=# data-a=dl data-v="${esc(x.file_path)}">📎 ${esc(x.file_name)}</a>`):''}</div>`),'<p class=m>Aucun échange pour le moment.</p>');imgs($('#rml'));
- const c=$('#rmc');if(st!='open'){c.innerHTML='';return}
- if(!c.querySelector('form')){c.innerHTML='<form id=rmf><textarea name=t rows=2 placeholder="Votre message à la réunion…"></textarea><input type=file name=f accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"><button>Envoyer</button></form>';
-  $('#rmf').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),file=f.get('f'),text=f.get('t').trim();if(!text&&!(file&&file.size))return;let att={};
-   if(file&&file.size){const p=await upl(file,file.name);if(!p)return;att={file_path:p,file_name:file.name,file_kind:file.type.startsWith('image/')?'image':'document'}}
-   const{error}=await sb.from('pm_meeting_msgs').insert({meeting_id:CM.m.id,body:text||null,...att});if(error)return alert('Envoi refusé : '+error.message+(/row-level/i.test(error.message)?' (la salle est peut-être fermée)':''));e.target.reset();refreshRoom()}}}
-async function refreshRoom(){if(!CM)return;const[a,b]=await Promise.all([sb.from('pm_meetings').select('*').eq('id',CM.m.id).maybeSingle(),sb.from('pm_meeting_msgs').select('*').eq('meeting_id',CM.m.id).order('created_at')]);if(a.data)CM.m=a.data;if(b.data)CM.msgs=b.data;drawRoom()}
+ clearTimeout(MRT);const adm=me.role_type=='admin',st=mState(m);
+ const[inv,pd]=await Promise.all([sb.from('pm_meeting_invites').select('user_id,user_name').eq('meeting_id',id),sb.from('pm_dir').select('id,full_name,role_type')]);
+ CM={m,msgs:[],pres:[],hands:[],mutes:[],inv:inv.data||[],PN:Object.fromEntries((pd.data||[]).map(p=>[p.id,p])),joined:false,sig:'',cs:null};
+ if(st=='open'){const r=await sb.rpc('pm_meeting_join',{p_id:id,p_code:null});CM.joined=r.data=='ok'}
+ else{const p=await sb.from('pm_meeting_presence').select('user_id').eq('meeting_id',id).eq('user_id',me.id);CM.joined=adm||!!(p.data&&p.data.length)}
+ hs().innerHTML=`<button class=s data-a=rmback>← Réunions</button><div class=card><h3 style="margin-top:0">${esc(m.title)}</h3><div id=rstat></div><p class=m>${fdt(m.start_at)} → ${fh(m.end_at)}<span id=rend></span></p>${m.agenda?`<div class=ins>${esc(m.agenda)}</div>`:''}<p class=m>👥 Administration (tous)${CM.inv.length?' + invités : '+CM.inv.map(x=>esc(x.user_name)).join(', '):''}<br>Organisée par ${esc(m.created_by_name||'—')} · 🛡 Modérateur : <span id=rmod></span></p><div id=rbtn></div></div><div id=rpanel></div><div id=rml></div><div id=rmc></div>`;
+ await refreshRoom(true);
+ const loop=async()=>{if(!RMID||tab!='plus'||pv!='room')return;await refreshRoom();MRT=setTimeout(loop,mState(CM.m)=='open'?3000:10000)};MRT=setTimeout(loop,3000)}
+async function refreshRoom(force){if(!CM)return;const id=CM.m.id,adm=me.role_type=='admin';
+ const mr=await sb.from('pm_meetings').select('*').eq('id',id).maybeSingle();if(mr.data)CM.m=mr.data;
+ if(mState(CM.m)=='open'&&!CM.joined&&adm){const r=await sb.rpc('pm_meeting_join',{p_id:id,p_code:null});CM.joined=r.data=='ok'}
+ if(CM.joined){const[a,b,c,d]=await Promise.all([sb.from('pm_meeting_msgs').select('*').eq('meeting_id',id).order('created_at'),sb.from('pm_meeting_presence').select('user_id,first_at').eq('meeting_id',id),sb.from('pm_meeting_hands').select('*').eq('meeting_id',id).order('raised_at'),sb.from('pm_meeting_mutes').select('user_id').eq('meeting_id',id)]);
+  if(a.data)CM.msgs=a.data;if(b.data)CM.pres=b.data;if(c.data)CM.hands=c.data;if(d.data)CM.mutes=d.data.map(x=>x.user_id)}
+ drawRoom(force)}
+function drawRoom(force){const{m,msgs,pres,hands,mutes,PN}=CM,st=mState(m),adm=me.role_type=='admin',isMod=m.moderator_id==me.id||m.created_by==me.id||!!me.is_super;
+ const sig=[st,msgs.length,m.ended_at||'',m.mode,m.floor_user||'',hands.length,mutes.join(','),pres.length,m.moderator_id,CM.joined].join('|');if(!force&&sig==CM.sig)return;CM.sig=sig;
+ $('#rmod').textContent=m.moderator_name||'—';$('#rend').textContent=m.ended_at?' (clôturée à '+fh(m.ended_at)+')':'';
+ $('#rstat').innerHTML={future:`<div class=ins>🔒 Salle fermée. Ouverture le ${fdt(m.start_at)}.</div>`,open:`<div class=ins style="border-color:#1a7f37">🟢 Réunion en cours : fermeture automatique à ${fh(m.ended_at||m.end_at)}.</div>`,ended:'<div class=ins>🔒 Réunion terminée : salle fermée. Le procès-verbal est dans « Procès-verbaux ».</div>',cancelled:'<div class=ins>❌ Réunion annulée.</div>'}[st];
+ $('#rbtn').innerHTML=(adm&&st=='future'?'<button class=r data-a=rmcancel>Annuler la réunion</button>':'')+(adm&&st=='open'?'<button class=r data-a=rmend>Terminer la réunion maintenant</button>':'');
+ if(!CM.joined){$('#rpanel').innerHTML='';$('#rmc').innerHTML='';
+  $('#rml').innerHTML=st=='open'?`<div class=card><h3 style="margin-top:0">🔑 Code d'accès</h3><p class=m>Saisissez le code personnel reçu en privé dans <b>Messages</b> (« 🔑 Code d'accès personnel »).</p><form id=cdf><input name=c placeholder="Votre code" autocapitalize=characters autocomplete=off maxlength=12 required style="letter-spacing:4px;text-transform:uppercase;font-size:20px;text-align:center"><button>Entrer dans la salle</button></form></div>`:(st=='ended'?'<p class=m>Vous n\'avez pas participé à cette réunion.</p>':'<p class=m>Gardez votre code d\'accès à portée de main : il vous sera demandé à l\'ouverture.</p>');
+  const f=$('#cdf');if(f)f.onsubmit=async e=>{e.preventDefault();const r=await sb.rpc('pm_meeting_join',{p_id:m.id,p_code:new FormData(e.target).get('c')});
+   if(r.data=='ok'){CM.joined=true;await refreshRoom(true)}else alert(r.data=='locked'?"Impossible : trop d'essais. Réessayez dans 5 minutes.":r.data=='closed'?'Impossible : la salle est fermée.':'Impossible : code incorrect. Vérifiez le code reçu dans Messages.')};
+  return}
+ const nm=id=>PN[id]?.full_name||CM.inv.find(x=>x.user_id==id)?.user_name||'—',muted=mutes.includes(me.id),handUp=hands.some(h=>h.user_id==me.id),
+  canSpeak=st=='open'&&(m.moderator_id==me.id||(!muted&&(m.mode=='open'||(m.mode=='floor'&&m.floor_user==me.id))));let panel='';
+ if(st=='open'){
+  if(isMod){const mb=(k,l)=>`<button class="${m.mode==k?'g':'s'}" data-a=rmmode data-v=${k}>${l}</button>`;
+   panel=`<div class=card><b>🛡 Modération</b><div style="margin:6px 0">${mb('open','🔓 Ouvert à tous')} ${mb('floor','🎙 Une personne à la fois')} ${mb('closed','🔒 Fermé')}</div>
+   ${hands.length?`<div class=ins>✋ Mains levées (${hands.length}) : ${hands.map(h=>`${esc(h.user_name)} <button class=g data-a=rmgive data-u=${h.user_id} style="padding:4px 8px;margin:0">🎙</button>`).join(' · ')} <button class=s data-a=rmclear style="padding:4px 8px;margin:0">Effacer</button></div>`:''}
+   <details><summary class=m>Participants présents (${pres.length})</summary>${pres.map(p=>`<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin:4px 0"><span>${esc(nm(p.user_id))}${m.floor_user==p.user_id?' 🎙':''}${mutes.includes(p.user_id)?' 🔇':''}${hands.some(h=>h.user_id==p.user_id)?' ✋':''}</span><span>${p.user_id==m.moderator_id?'<span class=m>modérateur</span>':`<button class=s data-a=rmgive data-u=${p.user_id} style="padding:4px 8px;margin:0">🎙 Parole</button> <button class=s data-a=${mutes.includes(p.user_id)?'rmunmute':'rmmute'} data-u=${p.user_id} style="padding:4px 8px;margin:0">${mutes.includes(p.user_id)?'🔊 Débloquer':'🔇 Bloquer'}</button>`}</span></div>`).join('')}</details>
+   <details><summary class=m>Confier la modération à un autre administrateur</summary><select id=rpass>${Object.values(PN).filter(p=>p.role_type=='admin'&&p.id!=m.moderator_id).map(p=>`<option value=${p.id}>${esc(p.full_name)}</option>`).join('')}</select><button class=s data-a=rmpass>Confier</button></details></div>`}
+  else{const lbl=muted?'🔇 Le modérateur a bloqué votre écriture.':m.mode=='open'?'🟢 Vous pouvez écrire.':m.mode=='closed'?'🔒 Écriture fermée : seul le modérateur écrit.':m.floor_user==me.id?"🎙 C'est à vous : vous avez la parole.":m.floor_user?"🎙 C'est au tour de "+esc(m.floor_name||nm(m.floor_user))+'.':'🎙 Le modérateur va donner la parole.';
+   panel=`<div class=card><b>${lbl}</b>${!canSpeak&&!muted?`<br><button class="${handUp?'s':'g'}" data-a=rmhand data-v=${handUp?0:1}>${handUp?'✋ Baisser la main':'✋ Demander la parole'}</button>`:''}</div>`}}
+ $('#rpanel').innerHTML=panel;
+ const lk=isMod&&st=='open';
+ $('#rml').innerHTML=list(msgs.map(x=>x.kind=='system'?`<div style="text-align:center;margin:8px 0"><span class=m style="background:#0000000d;border-radius:10px;padding:3px 10px;display:inline-block">${esc(x.body)}</span></div>`
+  :`<div class="msg ${x.sender_id==me.id?'me':'ot'}"><span class=m>${esc(x.sender_name||'—')} · ${fh(x.created_at)}${x.tag?` · <b>${x.tag=='decision'?'✔ Décision':'📌 Action'}</b>`:''}</span><br>${esc(x.body||'')}${x.file_path?(x.file_kind=='image'?`<br><img data-p="${esc(x.file_path)}" style="max-width:100%;border-radius:8px">`:`<br><a href=# data-a=dl data-v="${esc(x.file_path)}">📎 ${esc(x.file_name)}</a>`):''}${lk?`<div class=m style="margin-top:4px"><a href=# data-a=rmtag data-v=${x.id} data-t=decision>✔ Décision</a> · <a href=# data-a=rmtag data-v=${x.id} data-t=action>📌 Action</a>${x.tag?` · <a href=# data-a=rmtag data-v=${x.id} data-t="">✖ Retirer</a>`:''}</div>`:''}</div>`),'<p class=m>Aucun échange pour le moment.</p>');imgs($('#rml'));
+ const c=$('#rmc');if(CM.cs===canSpeak&&!force)return;CM.cs=canSpeak;const keep=c.querySelector('textarea')?.value||'';
+ if(!canSpeak){c.innerHTML=st=='open'?'<p class=m>✍ Écriture indisponible pour le moment.</p>':'';return}
+ c.innerHTML='<form id=rmf><textarea name=t rows=2 placeholder="Votre message à la réunion…"></textarea><input type=file name=f accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"><button>Envoyer</button></form>';c.querySelector('textarea').value=keep;
+ $('#rmf').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),file=f.get('f'),text=f.get('t').trim();if(!text&&!(file&&file.size))return;let att={};
+  if(file&&file.size){const p=await upl(file,file.name);if(!p)return;att={file_path:p,file_name:file.name,file_kind:file.type.startsWith('image/')?'image':'document'}}
+  const{error}=await sb.from('pm_meeting_msgs').insert({meeting_id:CM.m.id,body:text||null,...att});if(error)return alert('Envoi refusé : '+(/row-level/i.test(error.message)?"vous n'avez pas la parole ou la salle est fermée.":error.message));e.target.reset();refreshRoom(true)}}
+const modAct=async(act,t)=>{const{error}=await sb.rpc('pm_mod_action',{p_id:CM.m.id,p_action:act,p_target:t||null});if(error)return alert('Impossible : '+error.message);await refreshRoom(true)};
+H.rmmode=v=>modAct(v);H.rmgive=(v,b)=>modAct('give',b.dataset.u);H.rmmute=(v,b)=>modAct('mute',b.dataset.u);H.rmunmute=(v,b)=>modAct('unmute',b.dataset.u);H.rmclear=()=>modAct('clear_hands');
+H.rmpass=async()=>{const t=$('#rpass').value;if(!t)return;if(!await yes('Confier la modération ?','Vous ne serez plus le modérateur principal.'))return;modAct('pass',t)};
+H.rmhand=async v=>{const{error}=await sb.rpc('pm_hand',{p_id:CM.m.id,p_raise:v=='1'});if(error)return alert('Impossible : '+error.message);await refreshRoom(true)};
+H.rmtag=async(v,b)=>{const{error}=await sb.rpc('pm_tag_msg',{p_msg:v,p_tag:b.dataset.t||null});if(error)return alert('Impossible : '+error.message);await refreshRoom(true)};
+/* ---------- Procès-verbaux ---------- */
+async function pvView(){if(PVID)return pvDetail(PVID);
+ const r=await sb.from('pm_minutes').select('id,ref,content,pdf_path,created_at').order('created_at',{ascending:false});
+ hs().innerHTML=`<h3>📑 Procès-verbaux</h3><p class=m>Un procès-verbal est établi automatiquement à la fin de chaque réunion, prêt à être conservé (PDF).</p>`+list((r.data||[]).map(p=>`<div class=card data-a=pvopen data-v=${p.id}><b>${esc(p.content.title)}</b><br><span class=m>${esc(p.ref)} · ${esc(p.content.date)} · ${p.content.stats.present}/${p.content.stats.invited} présents</span> ${p.pdf_path?'<span class=tag>📄 PDF</span>':'<span class=tag>⏳ PDF en préparation</span>'}</div>`),'<p class=m>Aucun procès-verbal pour le moment.</p>')}
+H.pvopen=v=>{PVID=v;pvDetail(v)};H.pvback=()=>{PVID=null;clearTimeout(MRT);pvView()};
+async function pvDetail(id){const{data:p}=await sb.from('pm_minutes').select('*').eq('id',id).maybeSingle();if(!p){PVID=null;return pvView()}const c=p.content,adm=me.role_type=='admin';
+ const tb=(h,rows)=>`<table class=tb><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</table>`,
+  it=(a,e)=>a.length?a.map((d,i)=>`<p><b>${i+1}. ${esc(d.text)}</b><br><span class=m>${d.t} · ${esc(d.name||'')}</span></p>`).join(''):`<p class=m>${e}</p>`;
+ hs().innerHTML=`<button class=s data-a=pvback>← Procès-verbaux</button><div class=card><div style="text-align:center"><div class=m style="letter-spacing:2px">${esc(c.org).toUpperCase()}</div><h3 style="margin:6px 0">PROCÈS-VERBAL DE RÉUNION</h3><b>${esc(c.title)}</b><br><span style="color:var(--b);font-weight:700">Réf. ${esc(p.ref)}</span></div>
+ <p>${p.pdf_path?`<button class=g data-a=pvdl data-v=${p.id}>📄 Télécharger le PDF</button>`:'<span class=tag>⏳ PDF en préparation…</span>'}${adm?` <button class=s data-a=pvregen data-v=${p.id}>🔄 Recréer le PDF</button>`:''}</p>
+ <table class=tb><tr><th>Date</th><td>${esc(c.date)}</td></tr><tr><th>Horaires</th><td>${c.start} → ${c.end_actual} (prévu ${c.end_planned}) · ${c.duration_min} min</td></tr><tr><th>Lieu</th><td>${esc(c.place)}</td></tr><tr><th>Organisateur</th><td>${esc(c.organizer||'—')}</td></tr><tr><th>Modérateur</th><td>${esc(c.moderator||'—')}</td></tr></table></div>
+ <div class=card><h4 style="margin-top:0">1. Ordre du jour</h4><p style="white-space:pre-wrap">${esc(c.agenda||'Aucun ordre du jour communiqué.')}</p></div>
+ <div class=card><h4 style="margin-top:0">2. Participants (${c.stats.present} présents / ${c.stats.invited})</h4>${tb(['Nom','Qualité','Présence','Msgs'],c.participants.map(x=>[esc(x.name),esc(x.kind)+'<br><span class=m>'+esc(x.role)+'</span>',x.present?'✅ '+(x.first||''):'❌ Absent',x.msgs]))}</div>
+ <div class=card><h4 style="margin-top:0">3. Décisions prises</h4>${it(c.decisions,'Aucune décision consignée.')}</div>
+ <div class=card><h4 style="margin-top:0">4. Actions à mener</h4>${it(c.actions,'Aucune action consignée.')}</div>
+ <details class=card><summary><b>Annexe A : transcription (${c.transcript.length})</b></summary>${c.transcript.map(x=>x.kind=='system'?`<div class=m>${x.t} · ${esc(x.text)}</div>`:`<p><span class=m>${x.t} · <b>${esc(x.name||'')}</b>${x.tag?' · '+(x.tag=='decision'?'✔ Décision':'📌 Action'):''}</span><br>${esc(x.text||'')}${x.file?'<br><span class=m>📎 '+esc(x.file)+'</span>':''}</p>`).join('')}</details>
+ <p class=m style="text-align:center">Établi automatiquement le ${esc(c.generated_at)} · Empreinte SHA-256 : ${esc(p.hash.slice(0,16))}…</p>`;
+ clearTimeout(MRT);if(!p.pdf_path){let n=0;const poll=async()=>{if(PVID!=id||tab!='plus'||pv!='pv'||++n>24)return;const q=await sb.from('pm_minutes').select('pdf_path').eq('id',id).maybeSingle();if(q.data?.pdf_path)return pvDetail(id);MRT=setTimeout(poll,5000)};MRT=setTimeout(poll,5000)}}
+H.pvdl=async v=>{const{data:p}=await sb.from('pm_minutes').select('ref,pdf_path').eq('id',v).maybeSingle();if(!p?.pdf_path)return alert('Le PDF est en préparation : patientez quelques secondes.');const u=await sign(p.pdf_path,p.ref+'.pdf');if(!u)return alert('Téléchargement impossible : PDF indisponible.');const a=document.createElement('a');a.href=u;a.download=p.ref+'.pdf';document.body.appendChild(a);a.click();a.remove()};
+H.pvregen=async v=>{const{error}=await sb.rpc('pm_regen_pdf',{p_id:v});alert(error?'Impossible : '+error.message:'Création du PDF relancée : patientez quelques secondes ✓');setTimeout(()=>pvDetail(v),2500)};
 H.rmcancel=async()=>{if(!await yes('Annuler cette réunion ?','Tous les participants seront prévenus.'))return;const{error}=await sb.rpc('pm_meeting_cancel',{p_id:CM.m.id});error?alert('Impossible : '+error.message):(alert('Réunion annulée ✓'),roomDetail(CM.m.id))};
 H.rmend=async()=>{if(!await yes('Terminer la réunion maintenant ?','La salle sera fermée immédiatement. La prochaine réunion devra commencer au moins 4 heures plus tard.'))return;const{error}=await sb.rpc('pm_meeting_end',{p_id:CM.m.id});error?alert('Impossible : '+error.message):(alert('Réunion terminée ✓'),roomDetail(CM.m.id))};
 async function followView(){const w=monday(FW?-1:0),canMsg=me.role_type=='zone_lead'||can('messages');
@@ -390,7 +471,7 @@ const lk=l=>{try{const u=new URL(l.url);return/^https?:$/.test(u.protocol)?`<a c
 const vwr=(a,k)=>a?`<details><summary class=m>${k}</summary>${list(a.map(v=>`<div class=m>${esc(v.user_name)} · ${fd(v.seen_at)}${v.downloaded_at?' · ⬇ '+fd(v.downloaded_at):''}</div>`),'<div class=m>Personne pour le moment.</div>')}</details>`:'';
 const postCard=(p,V,own)=>`<div class=card><b>${esc(p.title)}</b><br><span class=m>${esc(p.author_name)} · ${fd(p.created_at)} · ${p.zone_id?'📍 Zone '+esc(zn(p.zone_id)):'📢 Public'}</span><p style="white-space:pre-wrap">${esc(p.body)}</p>${p.image_path?`<img data-p="${esc(p.image_path)}" style="max-width:100%;border-radius:8px">`:''}<div>${(p.links||[]).map(lk).join('')}</div>${own?vwr(V?.[p.id]||[],`👁 Vu par ${(V?.[p.id]||[]).length}`)+`<button class=r data-a=pdel data-v=${p.id}>Supprimer</button>`:''}</div>`;
 function gate(un){$('#nav').innerHTML='';app.innerHTML=`<div class=card><h3>📢 Communiqués</h3><p class=m>Lisez ces communiqués avant de continuer.</p></div>${un.map(p=>postCard(p)).join('')}<button class=g data-a=gok>J'ai lu, continuer</button>`;imgs(app)}
-H.gok=async()=>{await markP();nav();show()};
+H.gok=async()=>{await markP();startApp()};
 async function postsView(){await loadInfo();const adm=me.role_type=='admin',ids=posts.filter(p=>adm||p.author_id==me.id).map(p=>p.id),V={};
  if(ids.length)((await sb.from('pm_post_views').select('post_id,user_name,seen_at').in('post_id',ids)).data||[]).forEach(v=>(V[v.post_id]??=[]).push(v));
  app.innerHTML=pushCard()+lateBanner()+pairBanner()+outBanner()+(canPub()?'<button data-a=pnew>+ Publier un communiqué</button>':'')+list(posts.map(p=>postCard(p,V,ids.includes(p.id)&&(adm?can('messages')||p.author_id==me.id:true))),'<p class=m>Aucun communiqué pour le moment.</p>');imgs(app);await markP();nav()}
@@ -427,8 +508,8 @@ async function mineList(){const all=(await sb.from('pm_reports').select('id,type
  const blockT=!!pActive()&&!isPrincipal(),ts0=[...(has('binome')?['terrain']:[]),...(has('berger_poste')||me.role_type=='serviteur'?['cellule_hebdo']:[]),...(me.role_type=='zone_lead'?['zone']:[])].filter(t=>!(t=='terrain'&&blockT)),btns=ts0.length>1?ts0.map(t=>`<button data-a=new data-v=${t}>+ ${TYPES[t]}</button>`).join(' '):ts0.length?`<button data-a=new data-v=${ts0[0]}>+ Nouveau rapport</button>`:'',tm=blockT?(await sb.from('pm_reports').select('id,type,period_label').eq('author_id',PR.principal).eq('status','submitted').order('period_start',{ascending:false})).data||[]:[];
  $('#rb').innerHTML=btns+(blockT?`<div class=ins>👫 Dans votre binôme, c'est <b>${esc(nmOf(PR.principal))}</b> (évangéliste principal) qui envoie le rapport de terrain.</div>`:'')+(tm.length?'<h4>Rapports envoyés par mon binôme</h4>'+tm.map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>Envoyé</span></div>`).join(''):'')+list((data||[]).map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>${r.status=='draft'?'Brouillon':'Envoyé'}</span></div>`),'<p class=m>Aucun rapport pour le moment.</p>')+lsList()+(olds.length?`<details class=card><summary><b>🗄 Archives de mes anciens postes (${olds.length})</b></summary>${olds.map(r=>`<div class=card data-a=open data-v=${r.id}><b>${TYPES[r.type]}</b><br><span class=m>${esc(r.period_label)}</span> <span class=tag>${r.status=='draft'?'Brouillon':'Envoyé'}</span></div>`).join('')}</details>`:'')}
 H.new=v=>{if((v||myType())=='terrain'){if(pActive()&&!isPrincipal()){alert("Dans un binôme, c'est l'évangéliste principal ("+nmOf(PR.principal)+") qui envoie le rapport de terrain. Écrivez-lui pour collaborer.");return}if(me.door_count==null){alert("Avant votre premier rapport de terrain, indiquez le nombre de portes de votre secteur (une seule fois).");H.tab('plus');H.pl('sched');return}}formView(null,v)};
-H.open=async v=>{const{data:r}=await sb.from('pm_reports').select('*').eq('id',v).single();r.status=='draft'&&r.author_id==me.id?formView(r):detailView(r)};
-async function formView(r,tp){let restored=false;const t0=r?.type||tp||myType(),sv=lsGet(ldKey(t0,r?.id),null);
+H.open=async v=>{const{data:r}=await sb.from('pm_reports').select('*').eq('id',v).single();if(!r)return alert('Rapport indisponible pour le moment (connexion nécessaire).');r.status=='draft'&&r.author_id==me.id?formView(r):detailView(r)};
+async function formView(r,tp){FORM={type:r?.type||tp||myType(),id:r?.id||null};let restored=false;const t0=r?.type||tp||myType(),sv=lsGet(ldKey(t0,r?.id),null);
  if(sv&&sv.data){r={...(r||{}),id:r?.id,type:t0,data:sv.data,period_start:sv.date,title:sv.title,inc:sv.inc};restored=true}
  const type=r?.type||tp||myType(),d=r?.data||{},dd=NEWD||today();NEWD=null;let inc=[],sel=new Set(r?.inc||[]);
  if(type=='zone'){const ri=await sb.from('pm_reports').select('id,type,author_name,period_label,data').neq('type','zone').eq('status','submitted').order('period_start',{ascending:false}).limit(200);if(ri.error)inc=lsGet('pm_inc_'+me.id,[]);else{inc=ri.data||[];try{localStorage.setItem('pm_inc_'+me.id,JSON.stringify(inc.map(x=>({id:x.id,type:x.type,author_name:x.author_name,period_label:x.period_label,data:{secteur:x.data?.secteur}}))))}catch{}}
@@ -457,18 +538,25 @@ async function sendReport(Wx,status,onId){const row={period_start:Wx.date,period
  if(Wx.type=='zone'){const d1=await sb.from('pm_report_links').delete().eq('zone_report_id',id);if(d1.error)return d1.error.message;if(Wx.inc.length){const i1=await sb.from('pm_report_links').insert(Wx.inc.map(x=>({zone_report_id:id,report_id:x})));if(i1.error)return i1.error.message}}
  if(status=='submitted'){const r=await sb.from('pm_reports').update({status:'submitted'}).eq('id',id);if(r.error)return r.error.message}
  return null}
-function queueReport(Wx,status){const a=obGet().filter(x=>!(x.w.id&&x.w.id==Wx.id));a.push({w:Wx,status,at:Date.now()});obSet(a);localStorage.removeItem(ldKey(Wx.type,Wx.id));localStorage.removeItem(ldKey(Wx.type,null));alert('Pas de connexion : votre rapport est gardé sur ce téléphone et partira automatiquement dès que le réseau revient ✓')}
+function queueReport(Wx,status){FORM=null;const a=obGet().filter(x=>!(x.w.id&&x.w.id==Wx.id));a.push({w:Wx,status,at:Date.now()});obSet(a);localStorage.removeItem(ldKey(Wx.type,Wx.id));localStorage.removeItem(ldKey(Wx.type,null));alert('Pas de connexion : votre rapport est gardé sur ce téléphone et partira automatiquement dès que le réseau revient ✓')}
 async function persist(status){const back=()=>OFFLINE?offlineHome():(sub='mine',repView());
  if(!navigator.onLine){queueReport(W,status);return back()}
  const e=await sendReport(W,status);
  if(e){if(isNet(e)){queueReport(W,status);return back()}return alert(e)}
- localStorage.removeItem(ldKey(W.type,W.id));localStorage.removeItem(ldKey(W.type,null));sub='mine';repView()}
+ localStorage.removeItem(ldKey(W.type,W.id));localStorage.removeItem(ldKey(W.type,null));FORM=null;sub='mine';repView()}
 async function flushOutbox(){if(flushing||!navigator.onLine||!me)return;flushing=true;let n=0;
  try{for(const it of obGet()){if(it.err)continue;const e=await sendReport(it.w,it.status,id=>{it.w.id=id;obSet(obGet().map(x=>x.at==it.at?it:x))});
   if(e===null){obSet(obGet().filter(x=>x.at!=it.at));n++}else if(isNet(e))break;else{it.err=e;obSet(obGet().map(x=>x.at==it.at?it:x))}}}
  finally{flushing=false}
  if(n){alert(n+' rapport'+(n>1?'s':'')+' en attente envoyé'+(n>1?'s':'')+' ✓');if(tab=='rep'&&sub=='mine'&&!OFFLINE)mineList()}}
-addEventListener('online',()=>{if(OFFLINE)boot();else flushOutbox()});
+const netBar=()=>{const o=$('#ob');if(!o)return;const off=!navigator.onLine;o.hidden=!off;o.textContent=off?'📴 Hors connexion : vous voyez les dernières données. Vos envois partiront au retour du réseau.':''};
+const mqKey=()=>'pm_mq_'+me.id,mqGet=()=>lsGet(mqKey(),[]),mqSet=a=>localStorage.setItem(mqKey(),JSON.stringify(a)),mdKey=k=>`pm_md_${me.id}_${k}`;let mflush=false;
+async function flushMsgs(){if(mflush||!navigator.onLine||!me)return;mflush=true;
+ try{for(const it of mqGet()){const r=await sb.from('pm_messages').insert(it.row);if(!r.error)mqSet(mqGet().filter(x=>x.at!=it.at));else if(isNet(r.error.message))break;else{mqSet(mqGet().filter(x=>x.at!=it.at));alert('Un message en attente a été refusé : '+r.error.message)}}}finally{mflush=false}
+ if(tab=='msg'&&cur){M=(await sb.from('pm_messages').select('*').order('created_at')).data||M;drawMsgs()}}
+addEventListener('offline',netBar);
+addEventListener('online',()=>{netBar();if(!me)return;flushOutbox();flushMsgs();refreshUnread();if(!FORM&&!cur&&!ALERT_OPEN&&!RMID&&READY)show()});
+setInterval(()=>{if(me&&navigator.onLine&&mqGet().length)flushMsgs()},20000);
 setInterval(()=>{if(me&&!OFFLINE&&navigator.onLine&&obGet().length)flushOutbox()},30000);
 function newBtns(){const ts=[];if(has('binome'))ts.push('terrain');if(has('berger_poste')||me.role_type=='serviteur')ts.push('cellule_hebdo');if(me.role_type=='zone_lead')ts.push('zone');return ts.map(t=>`<button data-a=new data-v=${t}>+ ${TYPES[t]}</button>`).join(' ')}
 const lsList=()=>{const ob=obGet(),dr=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith('pm_ld_'+me.id+'_')){const v=lsGet(k,null);if(v&&v.data)dr.push({k,v})}}
@@ -502,6 +590,9 @@ async function recList(){const adm=me.role_type=='admin';
  ['fq','ft','fm','ff','fs'].forEach(i=>$('#'+i).oninput=draw);draw()}
 
 /* ---------- Messages ---------- */
+async function refreshUnread(){if(!me||me.status!='active'||!navigator.onLine)return;const r=await sb.rpc('pm_unread');if(r.error)return;UNR=Object.fromEntries((r.data||[]).map(x=>[x.k,x.n]));UNRT=Object.values(UNR).reduce((a,b)=>a+b,0);try{UNRT?navigator.setAppBadge?.(UNRT):navigator.clearAppBadge?.()}catch{}nav()}
+async function markThreadRead(k){if(!k||String(k).startsWith('bc:'))return;if(UNR[k]){UNRT-=UNR[k];delete UNR[k];nav()}await sb.rpc('pm_mark_read',{p_k:k})}
+setInterval(()=>{if(me&&me.status=='active'&&!document.hidden)refreshUnread()},20000);
 async function msgView(){cur=null;const adm=me.role_type=='admin',lead=me.role_type=='zone_lead';
  const[{data:ps},{data:ms}]=await Promise.all([sb.from('pm_dir').select('id,full_name,role_type,zone_id').eq('status','active'),sb.from('pm_messages').select('*').order('created_at')]);
  P=Object.fromEntries((ps||[]).map(p=>[p.id,p]));M=ms||[];
@@ -513,7 +604,15 @@ async function msgView(){cur=null;const adm=me.role_type=='admin',lead=me.role_t
  if(lead)T.unshift({k:'bc:'+me.zone_id,n:'📢 Toute ma zone'});
  if(M.some(m=>!m.recipient_id&&m.sender_id!=me.id))T.unshift({k:'ann',n:'📢 Annonces',ro:1});
  if(adm&&!can('messages'))T.forEach(t=>t.ro=1);
- app.innerHTML=list(T.map(t=>{const l=thread(t.k).slice(-1)[0];return`<div class=card data-a=thr data-v=${t.k}><b>${esc(t.n)}</b><br><span class=m>${l?esc(qtxt(l).slice(0,60)):'Aucun message'}</span></div>`}),'<div class=card>Aucun contact disponible : votre zone ou votre responsable n’est pas encore défini.</div>')}
+ const nzm=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''),
+  rows=T.map(t=>{const th=thread(t.k);return{t,l:th.slice(-1)[0],n:th.length}}).filter(x=>x.l).sort((a,b)=>new Date(b.l.created_at)-new Date(a.l.created_at)),
+  tm=d=>{const x=new Date(d),n=new Date();return x.toDateString()==n.toDateString()?x.toLocaleTimeString('fr',{hour:'2-digit',minute:'2-digit'}):x.toLocaleDateString('fr',{day:'2-digit',month:'2-digit'})};
+ app.innerHTML=`<button data-a=mnew>✏ Nouveau message</button><input id=mqs placeholder="🔎 Chercher une discussion…" style="margin-top:8px"><div id=mlist></div>`;
+ const draw=()=>{const q=nzm($('#mqs').value);$('#mlist').innerHTML=list(rows.filter(x=>!q||nzm(x.t.n).includes(q)).map(x=>`<div class=card data-a=thr data-v=${x.t.k} style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0"><b>${esc(x.t.n)}</b><br><span class=m>${esc((x.l.sender_id==me.id?'Vous : ':'')+qtxt(x.l).slice(0,60))}</span></div><div style="text-align:right;white-space:nowrap"><span class=m>${tm(x.l.created_at)}</span><br>${UNR[x.t.k]?`<span class=bd style="margin:0 6px 0 0">${UNR[x.t.k]}</span>`:''}<span class=m>${x.n} msg</span></div></div>`),'<div class=card>Aucune discussion pour le moment. Appuyez sur « ✏ Nouveau message » pour écrire.</div>')};
+ $('#mqs').oninput=draw;draw()}
+H.mnew=()=>{const nzm=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''),all=T.filter(t=>!t.ro).sort((a,b)=>(a.k.startsWith('bc:')?0:1)-(b.k.startsWith('bc:')?0:1)||a.n.localeCompare(b.n));
+ app.innerHTML=`<button class=s data-a=back>← Retour</button><h3>Nouveau message</h3><input id=mnq placeholder="🔎 Chercher un destinataire…"><div id=mnl></div>`;
+ const draw=()=>{const q=nzm($('#mnq').value);$('#mnl').innerHTML=list(all.filter(t=>!q||nzm(t.n).includes(q)).slice(0,60).map(t=>`<div class=card data-a=thr data-v=${t.k}><b>${esc(t.n)}</b></div>`),'<div class=card>Aucun destinataire trouvé.</div>')};$('#mnq').oninput=draw;draw()};
 const thread=k=>M.filter(m=>k=='ann'?(!m.recipient_id&&m.sender_id!=me.id):k.startsWith('bc:')?(m.sender_id==me.id&&(k=='bc:all'?m.audience=='all':m.audience=='zone'&&m.zone_id==k.slice(3))):((m.sender_id==me.id&&m.recipient_id==k)||(m.sender_id==k&&m.recipient_id==me.id)||(partnerId()&&m.sender_id==k&&m.recipient_id==partnerId())));
 H.thr=v=>convView(v);H.back=()=>msgView();
 let RPL=null;
@@ -521,7 +620,8 @@ const qtxt=m=>!m?'Message non disponible':m.deleted_at?'🚫 Message supprimé':
 function convView(k){cur=k;RPL=null;const t=T.find(x=>x.k==k);
  app.innerHTML=`<button class=s data-a=back>← Retour</button><h3>${esc(t.n)}</h3><div id=ml></div>${t.ro?'<p class=m>Lecture seule : vous ne pouvez pas répondre ici.</p>':`<div id=rp></div><form id=cf><textarea name=t rows=2 placeholder="Votre message…"></textarea><input type=file name=f accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"><button>Envoyer</button></form>`}`;
  if(!t.ro)$('#cf').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),file=f.get('f');await send(k,f.get('t').trim(),file&&file.size?file:null);e.target.reset()};
- drawMsgs()}
+ if(!t.ro){const ta=document.querySelector('#cf textarea'),sv=localStorage.getItem(mdKey(k));if(ta){if(sv)ta.value=sv;ta.addEventListener('input',()=>{ta.value?localStorage.setItem(mdKey(k),ta.value):localStorage.removeItem(mdKey(k))})}}
+ markThreadRead(k);drawMsgs()}
 const drawRpl=()=>{const el=$('#rp');if(el)el.innerHTML=RPL?`<div class=ins style="display:flex;justify-content:space-between;gap:8px"><span>↩ Réponse à <b>${esc(RPL.name)}</b><br><span class=m>${esc(RPL.text)}</span></span><button type=button class=s data-a=rpx style="margin:0">✕</button></div>`:''};
 H.rpl=v=>{const m=M.find(x=>x.id==v);if(!m||m.deleted_at)return;RPL={id:m.id,name:m.sender_id==me.id?'vous':(P[m.sender_id]?.full_name||'—'),text:qtxt(m)};drawRpl();const ta=document.querySelector('#cf textarea');if(ta)ta.focus()};
 H.rpx=()=>{RPL=null;drawRpl()};
@@ -533,21 +633,24 @@ function drawMsgs(){const el=$('#ml');if(!el)return;const t=T.find(x=>x.k==cur),
   if(m.deleted_at)return`<div class="msg ${mine?'me':'ot'}" id=m_${m.id}>${head}<br><i class=m>🚫 Message supprimé</i></div>`;
   const quote=m.reply_to?`<div data-a=qj data-v=${m.reply_to} style="border-left:3px solid var(--g);background:#0000000d;border-radius:6px;padding:4px 8px;margin:4px 0;cursor:pointer"><span class=m><b>↩ ${esc(q?(q.sender_id==me.id?'Vous':(P[q.sender_id]?.full_name||'—')):'Message')}</b><br>${esc(qtxt(q))}</span></div>`:'';
   const acts=`<div style="margin-top:4px">${t&&!t.ro?`<a href=# class=m data-a=rpl data-v=${m.id}>↩ Répondre</a>`:''}${canDel&&mine?` &nbsp; <a href=# class=m data-a=mdel2 data-v=${m.id}>🗑 Supprimer</a>`:''}</div>`;
-  return`<div class="msg ${mine?'me':'ot'}" id=m_${m.id}>${head}${quote}<br>${esc(m.body||'')}${m.file_path?(m.file_kind=='image'?`<br><img data-p="${esc(m.file_path)}" style="max-width:100%;border-radius:8px">`:`<br><a href=# data-a=dl data-v="${esc(m.file_path)}">📎 ${esc(m.file_name)}</a>`):''}${acts}</div>`}),'<p class=m>Aucun message.</p>');imgs(el)}
+  return`<div class="msg ${mine?'me':'ot'}" id=m_${m.id}>${head}${quote}<br>${esc(m.body||'')}${m.file_path?(m.file_kind=='image'?`<br><img data-p="${esc(m.file_path)}" style="max-width:100%;border-radius:8px">`:`<br><a href=# data-a=dl data-v="${esc(m.file_path)}">📎 ${esc(m.file_name)}</a>`):''}${acts}</div>`}),'<p class=m>Aucun message.</p>')+mqGet().filter(x=>x.k==cur).map(x=>`<div class="msg me"><span class=m>⏳ En attente d'envoi</span><br>${esc(x.row.body||'')}</div>`).join('');imgs(el)}
 H.dl=async v=>{const u=await sign(v);if(u)window.open(u)};
 async function send(k,text,file){if(!text&&!file)return;let att={};
+ if(file&&!navigator.onLine)return alert("Pièce jointe : une connexion est nécessaire. Vous pouvez envoyer le texte seul.");
  if(file){const path=await upl(file,file.name);if(!path)return;att={file_path:path,file_name:file.name,file_kind:file.type.startsWith('image/')?'image':'document'}}
  const to=k=='bc:all'?{audience:'all'}:k.startsWith('bc:')?{audience:'zone',zone_id:k.slice(3)}:{recipient_id:k};
- const r=await sb.from('pm_messages').insert({sender_id:me.id,body:text||null,...att,...to,...(RPL?{reply_to:RPL.id}:{})});if(r.error)return alert('Envoi refusé : '+r.error.message);
- RPL=null;drawRpl();M=(await sb.from('pm_messages').select('*').order('created_at')).data||M;drawMsgs()}
+ const row={sender_id:me.id,body:text||null,...att,...to,...(RPL?{reply_to:RPL.id}:{})},queue=()=>{mqSet([...mqGet(),{at:Date.now(),k,row}]);localStorage.removeItem(mdKey(k));RPL=null;drawRpl();drawMsgs()};
+ if(!navigator.onLine)return queue();
+ const r=await sb.from('pm_messages').insert(row);if(r.error){if(isNet(r.error.message))return queue();return alert('Envoi refusé : '+r.error.message)}
+ localStorage.removeItem(mdKey(k));RPL=null;drawRpl();M=(await sb.from('pm_messages').select('*').order('created_at')).data||M;drawMsgs()}
 const msig=a=>a.length+'|'+a.filter(m=>m.deleted_at).length;
-setInterval(async()=>{if(tab=='msg'&&cur){const{data}=await sb.from('pm_messages').select('*').order('created_at');if(data&&msig(data)!=msig(M)){M=data;drawMsgs()}}},15000);
+setInterval(async()=>{if(tab=='msg'&&cur){const{data}=await sb.from('pm_messages').select('*').order('created_at');if(data&&msig(data)!=msig(M)){M=data;drawMsgs();markThreadRead(cur)}}},15000);
 
 /* ---------- Plus : profil, programmes, administration ---------- */
-function plusView(){if(!pv){const it=[['prof','👤 Mon profil'],...(me.role_type=='admin'||MEETS.length?[['room','🏛 Salle des réunions'+(MEETS.some(m=>mState(m)=='open')?' 🟢':'')]]:[]),...(has('binome')?[['pair','👫 Mon binôme'+(PR?.status=='pending'&&PR.b==me.id?' 🔴':'')]]:[]),...(me.role_type=='zone_lead'||can('reports')?[['fw','📋 Suivi des rapports']]:[]),...(me.role_type=='zone_lead'||me.role_type=='admin'?[['pairs','👫 Binômes de la zone']]:[]),...(has('binome')||has('berger_poste')||me.role_type=='zone_lead'||can('reports')?[['ref','🤝 Recommandations (cellules)']]:[]),...(has('binome')||has('berger_poste')?[['sched','🗓 Mon programme fixe']]:[]),...(me.role_type=='zone_lead'||can('reports')?[['all','🗓 Programmes de la zone']]:[]),...(me.role_type=='zone_lead'||me.role_type=='admin'?[['dir','👥 Identités des membres'],['arc','🗄 Archives (retraits et mutations)']]:[]),...(me.role_type=='admin'?[['adm','⚙ Administration']]:[])];
+function plusView(){if(!pv){const it=[['prof','👤 Mon profil'],...(me.role_type=='admin'||MEETS.length?[['room','🏛 Salle des réunions'+(MEETS.some(m=>mState(m)=='open')?' 🟢':'')],['pv','📑 Procès-verbaux']]:[]),...(has('binome')?[['pair','👫 Mon binôme'+(PR?.status=='pending'&&PR.b==me.id?' 🔴':'')]]:[]),...(me.role_type=='zone_lead'||can('reports')?[['fw','📋 Suivi des rapports']]:[]),...(me.role_type=='zone_lead'||me.role_type=='admin'?[['pairs','👫 Binômes de la zone']]:[]),...(has('binome')||has('berger_poste')||me.role_type=='zone_lead'||can('reports')?[['ref','🤝 Recommandations (cellules)']]:[]),...(has('binome')||has('berger_poste')?[['sched','🗓 Mon programme fixe']]:[]),...(me.role_type=='zone_lead'||can('reports')?[['all','🗓 Programmes de la zone']]:[]),...(me.role_type=='zone_lead'||me.role_type=='admin'?[['dir','👥 Identités des membres'],['arc','🗄 Archives (retraits et mutations)']]:[]),...(me.role_type=='admin'?[['adm','⚙ Administration']]:[])];
   const old7=me.is_super&&(!LEX||Date.now()-new Date(LEX)>7*864e5);
   return app.innerHTML=pushCard()+(old7?`<div class=card data-a=bkgo><b>💾 Sauvegarde conseillée</b><br><span class=m>${LEX?'Dernier export : '+fd(LEX):'Aucun export pour le moment'}. Appuyez ici pour sauvegarder les données.</span></div>`:'')+it.map(([k,l])=>`<div class=card data-a=pl data-v=${k}><b>${l}</b></div>`).join('')+inst()+'<div class=card data-a=out><b>⎋ Déconnexion</b></div>'}
- app.innerHTML='<button class=s data-a=pl data-v="">← Menu</button><div id=pb></div>';({prof:profView,room:roomView,fw:followView,pair:pairView,pairs:pairsView,sched:schedView,all:schedAll,ref:refView,dir:dirView,arc:arcView,adm:admView})[pv]()}
+ app.innerHTML='<button class=s data-a=pl data-v="">← Menu</button><div id=pb></div>';({prof:profView,room:roomView,pv:pvView,fw:followView,pair:pairView,pairs:pairsView,sched:schedView,all:schedAll,ref:refView,dir:dirView,arc:arcView,adm:admView})[pv]()}
 const DJ=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 async function schedView(){const ks=['binome','berger_poste'].filter(has).map(r=>KT[r]),{data}=await sb.from('pm_schedules').select('*').eq('user_id',me.id).order('created_at');
  hs().innerHTML=doorCard()+ks.map(([k,l])=>`<div class=card><h3>Mon programme fixe ${l}</h3>`+list((data||[]).filter(s=>s.kind==k).map(s=>`<div class=card>${esc(s.days.join(', '))} · ${esc(s.heure)}<br><span class=m>Avec : ${esc(s.compagnon||'—')}</span><br><button class=r data-a=scdel data-v=${s.id}>Supprimer</button></div>`),'<p class=m>Aucun programme enregistré.</p>')+`<form data-k=${k}><b>Ajouter un créneau</b><br>${DJ.map(d=>`<label><input class=ck type=checkbox name=d value=${d}>${d}</label><br>`).join('')}<label class=m>Heure</label><input type=time name=h required><input name=c placeholder="Compagnon (nom)" required value="${k=='terrain'&&partnerId()?esc(nmOf(partnerId())):''}"><button>Ajouter</button></form></div>`).join('');
