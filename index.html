@@ -712,4 +712,4 @@ const rz=async()=>{await loadZ();zonList()};
 H.zren=async(v,b)=>{const c=b.closest('[data-id]'),{error}=await sb.from('pm_zones').update({name:c.querySelector('input').value.trim()}).eq('id',c.dataset.id);error?alert(error.message):rz()};
 H.zdel=async(v,b)=>{if(!await yes('Supprimer cette zone ?'))return;const{error}=await sb.from('pm_zones').delete().eq('id',b.closest('[data-id]').dataset.id);error?alert('Suppression impossible : '+error.message):rz()};
 sb.auth.onAuthStateChange(ev=>{if(ev=='SIGNED_OUT'){me=null;boot()}});boot();
-</script></body></html>
+</script><script src="ajouts.js"></script></body></html>
