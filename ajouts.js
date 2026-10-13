@@ -68,11 +68,11 @@ drawMsgs=function(){const el=$('#ml');if(!el)return;
   const rs=RX[m.id]||[],cn={like:0,love:0};rs.forEach(r=>cn[r.kind]++);const my=rs.find(r=>r.user_id==me.id)?.kind;
   const rx=rs.length?`<div class=rx>${['like','love'].filter(k=>cn[k]).map(k=>`<span class="${my==k?'mine':''}">${k=='like'?'👍':'❤️'} ${cn[k]}</span>`).join('')}</div>`:'';
   const body=String(m.body||'').replace(/\n{3,}/g,'\n\n');
-  return`<div class="msg ${mine?'me':'ot'}" id=m_${m.id} data-mid=${m.id}>${head}${quote}${body?`<span class=mb>${esc(body)}</span>`:''}${m.file_path?(m.file_kind=='image'?`<img data-p="${esc(m.file_path)}" style="max-width:100%;border-radius:8px;display:block;margin-top:4px">`:`<a href=# data-a=dl data-v="${esc(m.file_path)}">📎 ${esc(m.file_name)}</a>`):''}${rx}</div>`};
+  return`<div class="msg ${mine?'me':'ot'}" id=m_${m.id} data-mid=${m.id}>${head}${quote}${body?`<span class=mb>${esc(body)}</span>`:''}${m.file_path?(isV(m)?`<video data-p="${esc(m.file_path)}" controls preload=metadata playsinline style="max-width:100%;border-radius:8px;display:block;margin-top:4px;background:#000"></video><span class=m>🎬 ${esc(m.file_name)}</span>`:m.file_kind=='image'?`<img data-p="${esc(m.file_path)}" style="max-width:100%;border-radius:8px;display:block;margin-top:4px">`:`<a href=# data-a=dl data-v="${esc(m.file_path)}">📎 ${esc(m.file_name)}</a>`):''}${rx}</div>`};
  el.innerHTML=(pins.length?`<div class=pinb>📌 <b>Épinglé${pins.length>1?'s':''}</b>${pins.slice(-3).map(m=>`<div data-a=qj data-v=${m.id} style="cursor:pointer">• ${esc(qtxt(m))}</div>`).join('')}</div>`:'')
   +list(thread(cur).map(one),'<p class=m>Aucun message.</p>')
   +mqGet().filter(x=>x.k==cur).map(x=>`<div class="msg me"><span class=m>⏳ En attente d'envoi</span><span class=mb>${esc(x.row.body||'')}</span></div>`).join('');
- imgs(el);if(!el._lp){el._lp=1;attachLP(el)}};
+ imgs(el);vids(el);if(!el._lp){el._lp=1;attachLP(el)}};
 function attachLP(el){let tm=null,sx=0,sy=0;const cancel=()=>{clearTimeout(tm);tm=null},
  start=e=>{const b=e.target.closest('.msg[data-mid]');if(!b||e.target.closest('a,[data-a=qj]'))return;const p=e.touches?e.touches[0]:e;sx=p.clientX;sy=p.clientY;clearTimeout(tm);tm=setTimeout(()=>{tm=null;menu(b.dataset.mid)},450)},
  move=e=>{const p=e.touches?e.touches[0]:e;if(Math.abs(p.clientX-sx)>10||Math.abs(p.clientY-sy)>10)cancel()};
@@ -99,7 +99,7 @@ const ru0=refreshUnread;refreshUnread=async function(){const r=await ru0.apply(t
 
 /* ===== 4. Salle de réunion : écrire (en attente) + signaux rapides ===== */
 const SIG=[['motion','🗳 Motion'],['comment','💬 Commentaire'],['addition','➕ Complément'],['question','❓ Question'],['like',"👍 J'aime"],['applause','👏 Bravo'],['agree',"✅ D'accord"],['disagree',"❌ Pas d'accord"],['repeat','🔁 Répéter'],['urgent','🚨 Urgent']];
-const dr0=drawRoom;drawRoom=function(force){try{if(CM&&CM.msgs)CM.msgs=CM.msgs.map(x=>x.kind=='signal'?{...x,kind:'system',body:(x.sender_name||'')+' : '+x.body}:x)}catch{}dr0.call(this,force);try{decorEdit();decorRoom()}catch(e){console.warn(e)}};
+const dr0=drawRoom;drawRoom=function(force){try{if(CM&&CM.msgs)CM.msgs=CM.msgs.map(x=>x.kind=='signal'?{...x,kind:'system',body:(x.sender_name||'')+' : '+x.body}:x)}catch{}dr0.call(this,force);try{decorEdit();decorRoom();decorVid()}catch(e){console.warn(e)}};
 function decorEdit(){if(!CM||me.role_type!='admin'||mState(CM.m)!='future')return;const r=$('#rbtn');if(r&&!r.querySelector('[data-a=rmedit]'))r.insertAdjacentHTML('afterbegin','<button class=g data-a=rmedit>✏ Modifier le programme</button> ')}
 H.rmedit=async()=>{const m=CM.m,nz=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''),
  loc=d=>{const x=new Date(d),p=n=>String(n).padStart(2,'0');return[x.getFullYear()+'-'+p(x.getMonth()+1)+'-'+p(x.getDate()),p(x.getHours())+':'+p(x.getMinutes())]},
@@ -164,6 +164,18 @@ addEventListener('popstate',e=>{if(EXIT||!e.state||e.state.pm!='base')return;
  if(goBack()){history.pushState({pm:'app'},'');return}
  const n=Date.now();if(n-lastBack<2500){EXIT=true;history.back();return}
  lastBack=n;alert("Appuyez encore une fois sur Retour pour quitter l'application");history.pushState({pm:'app'},'')});
+
+/* ===== 7. Vidéos MP4 ===== */
+function isV(m){return /\.mp4$/i.test((m&&(m.file_path||m.file_name))||'')}
+function vids(el){el.querySelectorAll('video[data-p]').forEach(async v=>{if(v.getAttribute('src'))return;const u=await sign(v.dataset.p);if(u)v.src=u})}
+const addMp4=i=>{if(i&&!/mp4/.test(i.accept||''))i.accept=(i.accept||'')+',video/mp4,.mp4'};
+function decorVid(){addMp4(document.querySelector('#rmf input[type=file]'));const el=$('#rml');if(!el)return;
+ el.querySelectorAll('a[data-a=dl]').forEach(a=>{if(!/\.mp4$/i.test(a.dataset.v||''))return;const v=document.createElement('video');v.dataset.p=a.dataset.v;v.controls=true;v.preload='metadata';v.setAttribute('playsinline','');v.style.cssText='max-width:100%;border-radius:8px;display:block;margin-top:4px;background:#000';a.replaceWith(v)});vids(el)}
+document.addEventListener('change',e=>{const i=e.target;if(!i||i.type!='file'||!i.files||!i.files[0]||i.id=='pf')return;const f=i.files[0],mp4=/\.mp4$/i.test(f.name)||f.type=='video/mp4';
+ if(!mp4&&f.type.startsWith('video/')){i.value='';return alert('Impossible : seul le format MP4 est accepté pour les vidéos.')}
+ const lim=mp4?50e6:20e6;if(f.size>lim){i.value='';alert('Impossible : fichier trop lourd ('+Math.round(f.size/1e6)+' Mo). Maximum : '+(mp4?'50':'20')+' Mo.'+(mp4?' Réduisez la durée ou la qualité de la vidéo.':''))}},true);
+const cv1=convView;convView=function(k){cv1.apply(this,arguments);addMp4(document.querySelector('#cf input[type=file]'))};
+const sn0=H.snew;H.snew=function(){sn0.apply(this,arguments);addMp4(document.querySelector('#sf2 [name=file]'));const p=document.querySelector('#sf2 p.m');if(p)p.textContent='Taille maximale : 20 Mo (50 Mo pour une vidéo MP4).'};
 
 /* ===== Démarrage ===== */
 if(typeof me!=='undefined'&&me){nav();refreshEx()}
